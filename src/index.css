@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: Arial, Helvetica, sans-serif;
+  --color-ink: #0f1d2b;
+  --color-steel: #1e3a52;
+  --color-accent: #0e7c86;
+  --color-ok: #16a34a;
+  --color-warn: #d97706;
+  --color-fail: #dc2626;
+  --color-nc: #94a3b8;
+}
+
+html, body, #root { height: 100%; }
+body { font-family: Arial, Helvetica, sans-serif; background: #eef2f5; color: #0f1d2b; }
+svg text { font-family: Arial, Helvetica, sans-serif; }
+
+input[type=number]::-webkit-inner-spin-button { opacity: .4; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tbl th { background: #1e3a52; color: #fff; font-weight: 600; padding: 4px 6px; text-align: left; position: sticky; top: 0; }
+.tbl td { border-bottom: 1px solid #e2e8f0; padding: 3px 6px; vertical-align: top; }
+.tbl tr:nth-child(even) td { background: #f8fafc; }
+.tbl input, .tbl select { width: 100%; min-width: 56px; border: 1px solid #cbd5e1; border-radius: 3px; padding: 1px 4px; background: #fff; }
+
+/* Memoria de cálculo */
+.memoria { font-family: Arial, Helvetica, sans-serif; font-size: 10.5pt; line-height: 1.38; color: #000; background: #fff; }
+.memoria h1 { font-size: 20pt; font-weight: bold; }
+.memoria h2 { font-size: 13pt; font-weight: bold; border-bottom: 1.5px solid #1e3a52; margin: 18px 0 8px; padding-bottom: 2px; color: #1e3a52; }
+.memoria h3 { font-size: 11pt; font-weight: bold; margin: 10px 0 4px; }
+.memoria table { border-collapse: collapse; width: 100%; margin: 4px 0 8px; font-size: 9pt; }
+.memoria th, .memoria td { border: 1px solid #94a3b8; padding: 2px 5px; text-align: left; }
+.memoria th { background: #e2e8f0; }
+.memoria .eq { font-family: Arial, Helvetica, sans-serif; background: #f5f7fa; border-left: 3px solid #0e7c86; padding: 3px 8px; margin: 3px 0; white-space: pre-wrap; }
+.memoria .pb { break-before: page; }
+.memoria section { break-inside: auto; }
+.memoria .avoid { break-inside: avoid; }
+
+@media print {
+  @page { size: A4 portrait; margin: 15mm 14mm; }
+  body { background: #fff; }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  body.printing-memoria #root > *:not(.print-root) { display: none !important; }
+  .print-root { position: static !important; overflow: visible !important; height: auto !important; }
+}
+.print-only { display: none; }
