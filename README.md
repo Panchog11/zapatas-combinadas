@@ -39,7 +39,7 @@ src/core/rebar.ts       Armado, refuerzos con prolongación, planilla de doblado
 src/core/autosize.ts    Dimensionamiento automático rectangular/trapezoidal
 src/core/validate.ts    Validaciones de datos
 src/ui/                 Pestañas de entrada y resultados
-src/drawings/           Modelo de dibujo único → SVG, PNG, PDF (impresión) y DXF R12
+src/drawings/           Plano A2 (grilla, rótulo, notas, planilla), axonometría 3D; SVG, PNG, PDF y DXF R12
 src/report/             Memoria de cálculo (PDF vía impresión, Arial, A4)
 src/tests/              Pruebas unitarias y caso de validación
 ```

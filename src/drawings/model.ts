@@ -38,14 +38,14 @@ function bboxOf(prims: Prim[], k: number): [number, number, number, number] {
     else if (p.t === 'circle') { add(p.x - p.r, p.y - p.r); add(p.x + p.r, p.y + p.r); }
     else { const w = p.s.length * p.h * k * 0.6; add(p.x - (p.anchor === 'end' ? w : p.anchor === 'middle' ? w / 2 : 0), p.y); add(p.x + w, p.y + p.h * k); }
   }
-  const m = 8 * k;
+  const m = 4 * k;
   return [x0 - m, y0 - m, x1 + m, y1 + m];
 }
 
 const mm = (v: number) => fmt(v / 1000, 2);
 
 /** k = factor de escala (1:k): convierte mm de papel a mm de modelo */
-export function planDrawing(p: Project, r: Results, k: number): Drawing {
+export function planDrawing(p: Project, r: Results, k: number, modo: 'encofrado' | 'armadura' = 'armadura'): Drawing {
   const f = p.footing, s = r.shape;
   const P: Prim[] = [];
   const X = (x: number) => f.x0 + x;
@@ -65,12 +65,12 @@ export function planDrawing(p: Project, r: Results, k: number): Drawing {
     const d = colDims(c);
     P.push({ t: 'line', x1: X(x), y1: Y(-Bm / 2 - ext), x2: X(x), y2: Y(Bm / 2 + ext * 1.6), layer: 'ejes', dash: 'axis', w: 0.18 });
     P.push({ t: 'circle', x: X(x), y: Y(Bm / 2 + ext * 1.6 + 4 * k), r: 4 * k, layer: 'ejes', w: 0.25 });
-    P.push({ t: 'text', x: X(x), y: Y(Bm / 2 + ext * 1.6 + 2.6 * k), s: String(i + 1), h: 3, layer: 'ejes', anchor: 'middle', bold: true });
+    P.push({ t: 'text', x: X(x), y: Y(Bm / 2 + ext * 1.6 + 2.6 * k), s: String(i + 1), h: 2, layer: 'ejes', anchor: 'middle', bold: true });
     if (c.ped.activo) P.push({ t: 'poly', pts: rectPts(X(x), Y(y), c.ped.bx, c.ped.by, 0), closed: true, layer: 'columnas', w: 0.35, dash: 'hidden' });
     if (c.forma === 'circ') P.push({ t: 'circle', x: X(x), y: Y(y), r: c.D / 2, layer: 'columnas', fill: '#94a3b8', w: 0.5 });
     else P.push({ t: 'poly', pts: rectPts(X(x), Y(y), d.bx, d.by, c.angulo), closed: true, layer: 'columnas', fill: '#94a3b8', w: 0.5 });
-    P.push({ t: 'text', x: X(x) + d.bx / 2 + 1.5 * k, y: Y(y) + d.by / 2 + 1 * k, s: c.nombre, h: 3, layer: 'textos', bold: true });
-    P.push({ t: 'text', x: X(x) + d.bx / 2 + 1.5 * k, y: Y(y) - d.by / 2 - 3.5 * k, s: `(${mm(c.x)}; ${mm(c.y)})`, h: 2, layer: 'cotas' });
+    P.push({ t: 'text', x: X(x) + d.bx / 2 + 1.5 * k, y: Y(y) + d.by / 2 + 1 * k, s: c.nombre, h: 2, layer: 'textos', bold: true });
+    if (modo === 'encofrado') P.push({ t: 'text', x: X(x) + d.bx / 2 + 1.5 * k, y: Y(y) - d.by / 2 - 3.5 * k, s: `(${mm(c.x)}; ${mm(c.y)})`, h: 2, layer: 'cotas' });
   });
   // cotas generales y parciales (abajo)
   const yb = Y(-Bm / 2);
@@ -79,15 +79,18 @@ export function planDrawing(p: Project, r: Results, k: number): Drawing {
   P.push({ t: 'dim', x1: X(0), y1: yb, x2: X(s.L), y2: yb, off: -18 * k, layer: 'cotas' });
   P.push({ t: 'dim', x1: X(0), y1: Y(-s.B1 / 2), x2: X(0), y2: Y(s.B1 / 2), off: -(ext + 10 * k), layer: 'cotas' });
   if (f.forma === 'trapezoidal') P.push({ t: 'dim', x1: X(s.L), y1: Y(-s.B2 / 2), x2: X(s.L), y2: Y(s.B2 / 2), off: ext + 10 * k, layer: 'cotas' });
-  // cotas transversales de la primera columna al borde
-  const c0 = cols[0];
-  if (c0) {
+  // cotas transversales de columnas a los bordes (encofrado: todas; armadura: la primera)
+  for (const c0 of modo === 'encofrado' ? cols : cols.slice(0, 1)) {
     const { x, y } = localXY(p, c0);
     const B = widthAt(s, x);
     P.push({ t: 'dim', x1: X(x), y1: Y(-B / 2), x2: X(x), y2: Y(y), off: 6 * k, layer: 'cotas' });
     P.push({ t: 'dim', x1: X(x), y1: Y(y), x2: X(x), y2: Y(B / 2), off: 6 * k, layer: 'cotas' });
   }
 
+  if (modo === 'encofrado') {
+    if (f.forma === 'trapezoidal') P.push({ t: 'text', x: X(s.L / 2), y: Y(0) + 2 * k, s: 'TRAPEZOIDAL', h: 2, layer: 'cotas', anchor: 'middle' });
+    return { id: 'encofrado', title: 'Planta de encofrado', prims: P, bbox: bboxOf(P, k) };
+  }
   // Armaduras: inferior en ambas direcciones, superior en ambas, refuerzos
   const L = r.long, T = r.trans;
   const Bmin = Math.min(s.B1, s.B2);
@@ -105,7 +108,8 @@ export function planDrawing(p: Project, r: Results, k: number): Drawing {
     const contIdx = new Set<number>();
     for (let i = 0; i < F.nCont; i++) contIdx.add(Math.min(F.total.n - 1, Math.round(i * step)));
     ys.forEach((yy, i) => {
-      const off = face === 'sup' ? F.total!.db * 0.8 : 0;
+      if (face === 'inf' ? yy > 0 : yy < 0) return; // media planta
+      const off = 0;
       if (contIdx.has(i)) P.push({ t: 'line', x1: X(rl), y1: Y(yy + off), x2: X(s.L - rl), y2: Y(yy + off), layer, w: 0.25, dash: face === 'sup' ? 'hidden' : undefined });
       else for (const rf of F.refuerzos) P.push({ t: 'line', x1: X(rf.x1), y1: Y(yy + off), x2: X(rf.x2), y2: Y(yy + off), layer: 'refuerzos', w: 0.35, dash: face === 'sup' ? 'hidden' : undefined });
     });
@@ -117,23 +121,24 @@ export function planDrawing(p: Project, r: Results, k: number): Drawing {
     const layer = face === 'inf' ? 'armInf' : 'armSup';
     for (let x = rl; x <= s.L - rl + 1; x += F.sel.s) {
       const B = widthAt(s, x);
-      const o = face === 'sup' ? F.sel.s / 2 : 0;
-      if (x + o > s.L - rl) break;
-      P.push({ t: 'line', x1: X(x + o), y1: Y(-B / 2 + rl), x2: X(x + o), y2: Y(B / 2 - rl), layer, w: 0.18, dash: face === 'sup' ? 'hidden' : undefined });
+      const ya = face === 'inf' ? -B / 2 + rl : 0, yb2 = face === 'inf' ? 0 : B / 2 - rl;
+      P.push({ t: 'line', x1: X(x), y1: Y(ya), x2: X(x), y2: Y(yb2), layer, w: 0.18, dash: face === 'sup' ? 'hidden' : undefined });
     }
     for (const b of F.bandas) {
       if (!b.nAdd) continue;
       for (let i = 0; i < b.nAdd; i++) {
         const x = b.x1 + ((i + 0.5) * (b.x2 - b.x1)) / b.nAdd;
         const B = widthAt(s, x);
-        P.push({ t: 'line', x1: X(x), y1: Y(-B / 2 + rl), x2: X(x), y2: Y(B / 2 - rl), layer: 'refuerzos', w: 0.35 });
+        P.push({ t: 'line', x1: X(x), y1: Y(-B / 2 + rl), x2: X(x), y2: Y(0), layer: 'refuerzos', w: 0.35 });
       }
     }
   };
   transBars('inf'); transBars('sup');
+  P.push({ t: 'text', x: X(s.L) + 3 * k, y: Y(-Bmin / 2) + 1 * k, s: 'ARM. INFERIOR', h: 2, layer: 'armInf', bold: true });
+  P.push({ t: 'text', x: X(s.L) + 3 * k, y: Y(Bmin / 2) - 3 * k, s: 'ARM. SUPERIOR', h: 2, layer: 'armSup', bold: true });
   // Marcas (globo con número) para cada marca relevante
   const marca = (g: string) => r.schedule.marcas.filter((m) => m.grupo === g);
-  const label = (x: number, y: number, txt: string, layer: Layer) => P.push({ t: 'text', x, y, s: txt, h: 2.5, layer, box: true });
+  const label = (x: number, y: number, txt: string, layer: Layer) => P.push({ t: 'text', x, y, s: txt, h: 2, layer, box: true });
   const mi = marca('longInf')[0], ms = marca('longSup')[0], ti = marca('transInf')[0], ts = marca('transSup')[0];
   if (mi) label(X(s.L * 0.08), Y(-Bmin / 2 + rl + 3 * k), `(${mi.marca}) ${mi.n}Ø${mi.db} L=${mm(mi.lu)} inf.`, 'armInf');
   if (ms) label(X(s.L * 0.08), Y(Bmin / 2 - rl - 6 * k), `(${ms.marca}) ${ms.n}Ø${ms.db} L=${mm(ms.lu)} sup.`, 'armSup');
@@ -147,35 +152,12 @@ export function planDrawing(p: Project, r: Results, k: number): Drawing {
   const xB = cB ? localXY(p, cB).x : s.L / 2;
   const cut = (x1: number, y1: number, x2: number, y2: number, n: string) => {
     P.push({ t: 'line', x1, y1, x2, y2, layer: 'ejes', w: 0.5, dash: 'axis' });
-    P.push({ t: 'text', x: x1, y: y1 + 1.5 * k, s: n, h: 4, layer: 'textos', anchor: 'middle', bold: true });
-    P.push({ t: 'text', x: x2, y: y2 + 1.5 * k, s: n, h: 4, layer: 'textos', anchor: 'middle', bold: true });
+    P.push({ t: 'text', x: x1, y: y1 + 1.5 * k, s: n, h: 3.5, layer: 'textos', anchor: 'middle', bold: true });
+    P.push({ t: 'text', x: x2, y: y2 + 1.5 * k, s: n, h: 3.5, layer: 'textos', anchor: 'middle', bold: true });
   };
   cut(X(-ext - 6 * k), Y(-Bm / 4), X(s.L + ext + 6 * k), Y(-Bm / 4), 'A');
   cut(X(xB + 0.6 * colDims(cB ?? p.columns[0]).bx), Y(-Bm / 2 - ext - 4 * k), X(xB + 0.6 * colDims(cB ?? p.columns[0]).bx), Y(Bm / 2 + ext + 4 * k), 'B');
 
-  // Orientación y escala gráfica
-  const ox = X(s.L) + ext + 22 * k, oy = Y(Bm / 2) + 4 * k;
-  P.push({ t: 'line', x1: ox, y1: oy, x2: ox + 12 * k, y2: oy, layer: 'notas', w: 0.35 });
-  P.push({ t: 'line', x1: ox, y1: oy, x2: ox, y2: oy + 12 * k, layer: 'notas', w: 0.35 });
-  P.push({ t: 'text', x: ox + 13 * k, y: oy - 1 * k, s: 'X', h: 3, layer: 'notas', bold: true });
-  P.push({ t: 'text', x: ox - 1 * k, y: oy + 13 * k, s: 'Y (N ref.)', h: 3, layer: 'notas', bold: true });
-  const sbY = Y(-Bm / 2) - 34 * k;
-  const unit = k <= 25 ? 500 : 1000;
-  for (let i = 0; i < 4; i++) P.push({ t: 'poly', pts: [[X(0) + i * unit, sbY], [X(0) + (i + 1) * unit, sbY], [X(0) + (i + 1) * unit, sbY + 1.5 * k], [X(0) + i * unit, sbY + 1.5 * k]], closed: true, layer: 'notas', fill: i % 2 ? '#fff' : '#0f1d2b', w: 0.18 });
-  P.push({ t: 'text', x: X(0), y: sbY - 4 * k, s: `0`, h: 2, layer: 'notas' });
-  P.push({ t: 'text', x: X(0) + 4 * unit, y: sbY - 4 * k, s: `${mm(4 * unit)} m   Escala 1:${k}`, h: 2, layer: 'notas' });
-  // Cuadro de materiales y notas
-  const tx = X(0), ty = sbY - 12 * k;
-  const lines = [
-    'MATERIALES',
-    `Hormigón: ${p.mat.hormigon.nombre} (f'c = ${p.mat.hormigon.fc} MPa) · Exposición: ${p.mat.exposicion}`,
-    `Acero: ${p.mat.acero.nombre} (fy = ${p.mat.acero.fy} MPa)`,
-    `Recubrimientos: inf. ${f.recInf} mm · sup. ${f.recSup} mm · lat. ${f.recLat} mm · Limpieza ${f.limpieza} mm`,
-    `Acero total: ${fmt(r.cantidades.acero, 0)} kg · Hormigón: ${fmt((r.cantidades.Vh + r.cantidades.Vped) / 1e9, 2)} m³`,
-    'NOTAS: Cotas en m salvo indicación. Línea llena: armadura inferior; trazos: superior.',
-    'Verificar en obra cotas y niveles. Documento generado por herramienta de asistencia: requiere revisión profesional.',
-  ];
-  lines.forEach((t, i) => P.push({ t: 'text', x: tx, y: ty - i * 4.2 * k, s: t, h: i === 0 ? 3 : 2.4, layer: 'notas', bold: i === 0 }));
   return { id: 'planta', title: 'Planta de armaduras', prims: P, bbox: bboxOf(P, k) };
 }
 
@@ -206,7 +188,7 @@ export function longSection(p: Project, r: Results, k: number): Drawing {
     P.push({ t: 'poly', pts: [[X(x - d.bx / 2), zt + hp], [X(x - d.bx / 2), top], [X(x + d.bx / 2), top], [X(x + d.bx / 2), zt + hp]], layer: 'columnas', w: 0.5 });
     P.push({ t: 'poly', pts: [[X(x - d.bx / 2 - 3 * k), top], [X(x - 2 * k), top], [X(x), top + 4 * k], [X(x + 1 * k), top - 4 * k], [X(x + 3 * k), top], [X(x + d.bx / 2 + 3 * k), top]], layer: 'columnas', w: 0.25 });
     P.push({ t: 'line', x1: X(x), y1: zb - 15 * k, x2: X(x), y2: top + 8 * k, layer: 'ejes', dash: 'axis', w: 0.18 });
-    P.push({ t: 'text', x: X(x), y: top + 9 * k, s: c.nombre, h: 3, layer: 'textos', anchor: 'middle', bold: true });
+    P.push({ t: 'text', x: X(x), y: top + 9 * k, s: c.nombre, h: 2.5, layer: 'textos', anchor: 'middle', bold: true });
     // esperas
     const m = r.schedule.marcas.find((q) => q.grupo === 'espera' && q.col === c.id);
     if (m) {
@@ -218,13 +200,13 @@ export function longSection(p: Project, r: Results, k: number): Drawing {
         if (m.B) pts.push([X(xb + sx * m.B), zbar]);
         P.push({ t: 'poly', pts, layer: 'esperas', w: 0.4 });
       }
-      P.push({ t: 'text', x: X(x + d.bx / 2 + 2 * k), y: zt + hp + 0.6 * m.A, s: `(${m.marca}) ${m.n}Ø${m.db} L=${mm(m.lu)}`, h: 2.3, layer: 'esperas', box: true });
+      P.push({ t: 'text', x: X(x + d.bx / 2 + 2 * k), y: zt + hp + 0.6 * m.A, s: `(${m.marca}) ${m.n}Ø${m.db} L=${mm(m.lu)}`, h: 2, layer: 'esperas', box: true });
       const e = r.schedule.marcas.find((q) => q.grupo === 'estribo' && q.col === c.id);
       if (e) {
         const zs = [zt - 80, zt - Math.min(250, f.h / 2)];
         if (hp > 0) for (let z = zt + 50; z <= zt + hp - 50; z += c.sEstribo) zs.push(z);
         for (const z of zs) P.push({ t: 'line', x1: X(x - d.bx / 2 + c.rec), y1: z, x2: X(x + d.bx / 2 - c.rec), y2: z, layer: 'esperas', w: 0.25 });
-        P.push({ t: 'text', x: X(x - d.bx / 2 - 2 * k), y: zt + 2 * k, s: `(${e.marca}) Ø${e.db}`, h: 2.3, layer: 'esperas', anchor: 'end' });
+        P.push({ t: 'text', x: X(x - d.bx / 2 - 2 * k), y: zt + 2 * k, s: `(${e.marca}) Ø${e.db}`, h: 2, layer: 'esperas', anchor: 'end' });
       }
     }
   }
@@ -236,17 +218,17 @@ export function longSection(p: Project, r: Results, k: number): Drawing {
   const mLI = r.schedule.marcas.find((q) => q.grupo === 'longInf'), mLS = r.schedule.marcas.find((q) => q.grupo === 'longSup');
   if (mLI) {
     P.push({ t: 'poly', pts: [[X(rl), zLI + mLI.A], [X(rl), zLI], [X(s.L - rl), zLI], [X(s.L - rl), zLI + mLI.A]], layer: 'armInf', w: 0.5 });
-    P.push({ t: 'text', x: X(s.L * 0.3), y: zb - 9 * k, s: `(${mLI.marca}) ${mLI.n}Ø${mLI.db} L=${mm(mLI.lu)}`, h: 2.5, layer: 'armInf', box: true });
+    P.push({ t: 'text', x: X(s.L * 0.3), y: zb - 9 * k, s: `(${mLI.marca}) ${mLI.n}Ø${mLI.db} L=${mm(mLI.lu)}`, h: 2, layer: 'armInf', box: true });
   }
   if (mLS) {
     P.push({ t: 'poly', pts: [[X(rl), zLS - mLS.A], [X(rl), zLS], [X(s.L - rl), zLS], [X(s.L - rl), zLS - mLS.A]], layer: 'armSup', w: 0.5 });
-    P.push({ t: 'text', x: X(s.L * 0.3), y: zt + 4 * k, s: `(${mLS.marca}) ${mLS.n}Ø${mLS.db} L=${mm(mLS.lu)}`, h: 2.5, layer: 'armSup', box: true });
+    P.push({ t: 'text', x: X(s.L * 0.3), y: zt + 4 * k, s: `(${mLS.marca}) ${mLS.n}Ø${mLS.db} L=${mm(mLS.lu)}`, h: 2, layer: 'armSup', box: true });
   }
   for (const m of r.schedule.marcas.filter((q) => q.grupo === 'longInfRef' || q.grupo === 'longSupRef')) {
     const sup = m.grupo === 'longSupRef';
     const z = sup ? zLS - 2.2 * (L.sup.total?.db ?? 16) : zLI + 2.2 * (L.inf.total?.db ?? 16);
     P.push({ t: 'line', x1: X(m.x1 ?? 0), y1: z, x2: X(m.x2 ?? 0), y2: z, layer: 'refuerzos', w: 0.5 });
-    P.push({ t: 'text', x: X(((m.x1 ?? 0) + (m.x2 ?? 0)) / 2), y: z + (sup ? -6 * k : 2.5 * k), s: `(${m.marca}) ${m.n}Ø${m.db} L=${mm(m.lu)}`, h: 2.3, layer: 'refuerzos', anchor: 'middle' });
+    P.push({ t: 'text', x: X(((m.x1 ?? 0) + (m.x2 ?? 0)) / 2), y: z + (sup ? -6 * k : 2.5 * k), s: `(${m.marca}) ${m.n}Ø${m.db} L=${mm(m.lu)}`, h: 2, layer: 'refuerzos', anchor: 'middle' });
   }
   // barras transversales en corte (puntos)
   const dots = (face: 'inf' | 'sup') => {
@@ -259,8 +241,7 @@ export function longSection(p: Project, r: Results, k: number): Drawing {
   P.push({ t: 'dim', x1: 0, y1: zb, x2: s.L, y2: zb, off: -18 * k, layer: 'cotas' });
   const xs = [0, ...p.columns.map((c) => localXY(p, c).x).sort((a, b) => a - b), s.L];
   for (let i = 0; i < xs.length - 1; i++) P.push({ t: 'dim', x1: xs[i], y1: zb, x2: xs[i + 1], y2: zb, off: -24 * k, layer: 'cotas' });
-  P.push({ t: 'text', x: s.L / 2, y: zb - 36 * k, s: 'CORTE A-A (longitudinal)', h: 4, layer: 'textos', anchor: 'middle', bold: true });
-  return { id: 'cA', title: 'Corte A-A', prims: P, bbox: bboxOf(P, k) };
+  return { id: 'cA', title: 'Corte A-A (longitudinal)', prims: P, bbox: bboxOf(P, k) };
 }
 
 /** Corte transversal B-B por la columna más cargada */
@@ -277,7 +258,7 @@ export function transSection(p: Project, r: Results, k: number): Drawing {
   const top = Math.max(zg, zt + hp) + 600;
   P.push({ t: 'poly', pts: [[yc - d.by / 2, zt + hp], [yc - d.by / 2, top], [yc + d.by / 2, top], [yc + d.by / 2, zt + hp]], layer: 'columnas', w: 0.5 });
   P.push({ t: 'line', x1: yc, y1: zb - 15 * k, x2: yc, y2: top + 8 * k, layer: 'ejes', dash: 'axis', w: 0.18 });
-  P.push({ t: 'text', x: yc, y: top + 9 * k, s: c.nombre, h: 3, layer: 'textos', anchor: 'middle', bold: true });
+  P.push({ t: 'text', x: yc, y: top + 9 * k, s: c.nombre, h: 2.5, layer: 'textos', anchor: 'middle', bold: true });
   const L = r.long, T = r.trans, rl = f.recLat;
   const extOut = p.crit.capaInferiorExterna === 'long';
   const zTI = zb + f.recInf + (extOut ? (L.inf.total?.db ?? 0) : 0) + (T.inf.sel?.db ?? 0) / 2;
@@ -285,11 +266,11 @@ export function transSection(p: Project, r: Results, k: number): Drawing {
   const mTI = r.schedule.marcas.find((q) => q.grupo === 'transInf'), mTS = r.schedule.marcas.find((q) => q.grupo === 'transSup');
   if (mTI) {
     P.push({ t: 'poly', pts: [[-B / 2 + rl, zTI + mTI.A], [-B / 2 + rl, zTI], [B / 2 - rl, zTI], [B / 2 - rl, zTI + mTI.A]], layer: 'armInf', w: 0.5 });
-    P.push({ t: 'text', x: -B / 2, y: zb - 9 * k, s: `(${mTI.marca}) Ø${mTI.db} c/${T.inf.sel?.s} L=${mm(mTI.lu)}`, h: 2.5, layer: 'armInf', box: true });
+    P.push({ t: 'text', x: -B / 2, y: zb - 9 * k, s: `(${mTI.marca}) Ø${mTI.db} c/${T.inf.sel?.s} L=${mm(mTI.lu)}`, h: 2, layer: 'armInf', box: true });
   }
   if (mTS) {
     P.push({ t: 'poly', pts: [[-B / 2 + rl, zTS - mTS.A], [-B / 2 + rl, zTS], [B / 2 - rl, zTS], [B / 2 - rl, zTS - mTS.A]], layer: 'armSup', w: 0.5 });
-    P.push({ t: 'text', x: -B / 2, y: zt + 4 * k, s: `(${mTS.marca}) Ø${mTS.db} c/${T.sup.sel?.s} L=${mm(mTS.lu)}`, h: 2.5, layer: 'armSup', box: true });
+    P.push({ t: 'text', x: -B / 2, y: zt + 4 * k, s: `(${mTS.marca}) Ø${mTS.db} c/${T.sup.sel?.s} L=${mm(mTS.lu)}`, h: 2, layer: 'armSup', box: true });
   }
   const dots = (face: 'inf' | 'sup') => {
     const F = L[face];
@@ -309,13 +290,12 @@ export function transSection(p: Project, r: Results, k: number): Drawing {
       if (m.B) pts.push([yb + sx * m.B, zbar]);
       P.push({ t: 'poly', pts, layer: 'esperas', w: 0.4 });
     }
-    P.push({ t: 'text', x: yc + d.by / 2 + 2 * k, y: zt + hp + 0.6 * m.A, s: `(${m.marca}) ${m.n}Ø${m.db}`, h: 2.3, layer: 'esperas', box: true });
+    P.push({ t: 'text', x: yc + d.by / 2 + 2 * k, y: zt + hp + 0.6 * m.A, s: `(${m.marca}) ${m.n}Ø${m.db}`, h: 2, layer: 'esperas', box: true });
   }
   P.push({ t: 'dim', x1: -B / 2, y1: zb, x2: B / 2, y2: zb, off: -18 * k, layer: 'cotas' });
   P.push({ t: 'dim', x1: -B / 2, y1: zb, x2: yc - d.by / 2, y2: zb, off: -24 * k, layer: 'cotas' });
   P.push({ t: 'dim', x1: yc + d.by / 2, y1: zb, x2: B / 2, y2: zb, off: -24 * k, layer: 'cotas' });
-  P.push({ t: 'text', x: 0, y: zb - 36 * k, s: `CORTE B-B (transversal por ${c.nombre})`, h: 4, layer: 'textos', anchor: 'middle', bold: true });
-  return { id: 'cB', title: 'Corte B-B', prims: P, bbox: bboxOf(P, k) };
+  return { id: 'cB', title: `Corte B-B (transversal por ${c.nombre})`, prims: P, bbox: bboxOf(P, k) };
 }
 
 function common(P: Prim[], f: Project['footing'], k: number, a: number, b: number, zb: number, zt: number, zg: number, _ax: 'x' | 'y') {
@@ -328,12 +308,12 @@ function common(P: Prim[], f: Project['footing'], k: number, a: number, b: numbe
   // niveles
   const lvl = (z: number, t: string) => {
     P.push({ t: 'poly', pts: [[b + ext * 0.6, z], [b + ext * 0.6 - 1.5 * k, z + 2.5 * k], [b + ext * 0.6 + 1.5 * k, z + 2.5 * k]], closed: true, layer: 'cotas', w: 0.18 });
-    P.push({ t: 'text', x: b + ext * 0.6 + 2.5 * k, y: z + 0.5 * k, s: `${t} ${z >= 0 ? '+' : ''}${fmt(z / 1000, 2)}`, h: 2.3, layer: 'cotas' });
+    P.push({ t: 'text', x: b + ext * 0.6 + 2.5 * k, y: z + 0.5 * k, s: `${t} ${z >= 0 ? '+' : ''}${fmt(z / 1000, 2)}`, h: 2, layer: 'cotas' });
   };
   lvl(zg, 'N.T.N.'); lvl(zt, 'N.S.Z.'); lvl(zb, 'N.Fund.');
   P.push({ t: 'dim', x1: a, y1: zb, x2: a, y2: zt, off: -8 * k, layer: 'cotas' });
   P.push({ t: 'dim', x1: a, y1: zb, x2: a, y2: zg, off: -16 * k, layer: 'cotas', s: `Df ${mm(zg - zb)}` });
-  P.push({ t: 'text', x: a + 2 * k, y: zb + 1.2 * k, s: `rec. ${f.recInf}`, h: 1.8, layer: 'cotas' });
-  P.push({ t: 'text', x: a + 2 * k, y: zt - 3 * k, s: `rec. ${f.recSup}`, h: 1.8, layer: 'cotas' });
+  P.push({ t: 'text', x: a + 2 * k, y: zb + 1.2 * k, s: `rec. ${f.recInf}`, h: 2, layer: 'cotas' });
+  P.push({ t: 'text', x: a + 2 * k, y: zt - 3 * k, s: `rec. ${f.recSup}`, h: 2, layer: 'cotas' });
   P.push({ t: 'text', x: b - 2 * k, y: zb - f.limpieza - 4 * k, s: `H° limpieza e = ${f.limpieza} mm`, h: 2, layer: 'terreno', anchor: 'end' });
 }

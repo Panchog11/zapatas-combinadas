@@ -14,6 +14,7 @@ import { SignConvention } from '../ui/SignConvention';
 import { BendingSchedule } from '../drawings/Schedule';
 import { SvgDrawing, printHTML } from '../drawings/render';
 import { LAYERS, longSection, planDrawing, transSection } from '../drawings/model';
+import { axoDrawing } from '../drawings/sheet';
 
 const kN = (v: number, d = 2) => fmt(v / 1e3, d);
 const kNm = (v: number, d = 2) => fmt(v / 1e6, d);
@@ -64,7 +65,8 @@ export function ReportTab({ p, r }: TabProps) {
   const ck = (id: string) => r.checks.find((c) => c.id === id);
   const geo = r.checks.filter((c) => c.grupo === 'geo');
   const allLayers = new Set(LAYERS.map((l) => l.id));
-  const ds = [planDrawing(p, r, 50), longSection(p, r, 50), transSection(p, r, 50)];
+  const axo = axoDrawing(p, r);
+  const ds = [planDrawing(p, r, 50, 'encofrado'), planDrawing(p, r, 50), longSection(p, r, 50), transSection(p, r, 50)];
   const govU = r.ult.find((u) => u.tot.combo.nombre === r.env.Mneg.combo) ?? r.ult[0];
   const govS = r.service.length ? r.service.reduce((a, b) => (b.pf.qmax > a.pf.qmax ? b : a)) : null;
   const print = () => { if (ref.current) printHTML(`<div class="memoria">${ref.current.innerHTML}</div>`, 'A4 portrait'); };
@@ -290,6 +292,7 @@ export function ReportTab({ p, r }: TabProps) {
 
         <H n={33} t="Planos" pb />
         {ds.map((d) => <div key={d.id} className="avoid" style={{ marginBottom: 12 }}><h3>{d.title} (escala gráfica de referencia 1:50)</h3><SvgDrawing d={d} k={50} layers={allLayers} /></div>)}
+        <div className="avoid"><h3>Axonometría (sin escala)</h3><div style={{ maxWidth: 420 }}><SvgDrawing d={axo} k={(axo.bbox[2] - axo.bbox[0]) / 120} layers={allLayers} /></div></div>
       </div>
     </div>
   );

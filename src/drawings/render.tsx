@@ -58,7 +58,7 @@ export const SvgDrawing = forwardRef<SVGSVGElement, { d: Drawing; k: number; lay
             {g.ext.map((e, j) => <line key={j} x1={e[0]} y1={-e[1]} x2={e[2]} y2={-e[3]} />)}
             <line x1={g.a[0]} y1={-g.a[1]} x2={g.b[0]} y2={-g.b[1]} />
             {g.ticks.map((e, j) => <line key={`t${j}`} x1={e[0]} y1={-e[1]} x2={e[2]} y2={-e[3]} strokeWidth={0.3 * k} />)}
-            <text x={g.tx} y={-g.ty} fontSize={2.3 * k} fill={c} stroke="none" textAnchor="middle" transform={`rotate(${-g.ang} ${g.tx} ${-g.ty})`} dy={g.sg > 0 ? 0 : 2.3 * k * 0.9} fontFamily="Arial, Helvetica, sans-serif">{g.txt}</text>
+            <text x={g.tx} y={-g.ty} fontSize={2 * k} fill={c} stroke="none" textAnchor="middle" transform={`rotate(${-g.ang} ${g.tx} ${-g.ty})`} dy={g.sg > 0 ? 0 : 2 * k * 0.9} fontFamily="Arial, Helvetica, sans-serif">{g.txt}</text>
           </g>,
         );
       }
@@ -107,7 +107,7 @@ export function toDXF(ds: Drawing[], k: number, layers: Set<Layer>): string {
         for (const e of g.ext) line(p.layer, e[0], e[1] + oy, e[2], e[3] + oy);
         line(p.layer, g.a[0], g.a[1] + oy, g.b[0], g.b[1] + oy);
         for (const e of g.ticks) line(p.layer, e[0], e[1] + oy, e[2], e[3] + oy);
-        text(p.layer, g.tx, g.ty + oy, 2.3 * k, g.txt, g.ang, 'middle');
+        text(p.layer, g.tx, g.ty + oy, 2 * k, g.txt, g.ang, 'middle');
       }
     }
     dy = oy + d.bbox[1] - 20 * k;
@@ -117,14 +117,14 @@ export function toDXF(ds: Drawing[], k: number, layers: Set<Layer>): string {
 }
 
 /** Imprime HTML en un iframe oculto (usa los estilos del documento) */
-export function printHTML(html: string, page: string) {
+export function printHTML(html: string, page: string, margin = '10mm') {
   const ifr = document.createElement('iframe');
   ifr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
   document.body.appendChild(ifr);
   const styles = [...document.querySelectorAll('style,link[rel=stylesheet]')].map((n) => n.outerHTML).join('');
   const doc = ifr.contentDocument!;
   doc.open();
-  doc.write(`<!doctype html><html><head><meta charset="utf-8">${styles}<style>@page{size:${page};margin:10mm}body{background:#fff;font-family:Arial,Helvetica,sans-serif;margin:0}svg{display:block;margin:0 auto}.pg{break-after:page}</style></head><body>${html}</body></html>`);
+  doc.write(`<!doctype html><html><head><meta charset="utf-8">${styles}<style>@page{size:${page};margin:${margin}}body{background:#fff;font-family:Arial,Helvetica,sans-serif;margin:0}svg{display:block;margin:0 auto}.pg{break-after:page}</style></head><body>${html}</body></html>`);
   doc.close();
   setTimeout(() => { ifr.contentWindow?.focus(); ifr.contentWindow?.print(); setTimeout(() => ifr.remove(), 2000); }, 400);
 }

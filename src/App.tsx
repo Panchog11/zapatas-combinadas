@@ -14,8 +14,10 @@ export interface TabProps { p: Project; set: (fn: (d: Project) => void) => void;
 
 const TABS = [
   'Proyecto y normativa', 'Geometría', 'Columnas y cargas', 'Geotecnia', 'Materiales', 'Criterios de cálculo',
-  'Resultados geotécnicos', 'Esfuerzos', 'Armaduras', 'Planos y despiece', 'Memoria de cálculo', 'Resumen',
+  'Resultados geotécnicos', 'Esfuerzos', 'Armaduras', 'Planos y despiece', 'Memoria de cálculo', 'Resumen y vista 3D',
 ];
+const GRUPOS: [string, number[]][] = [['Inicio', [11]], ['Datos', [0, 1, 2, 3, 4, 5]], ['Resultados', [6, 7, 8]], ['Documentación', [9, 10]]];
+const ORDEN = GRUPOS.flatMap(([, i]) => i);
 const KEY = 'zapatas-combinadas:v1';
 
 function load(): Project {
@@ -68,7 +70,7 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="no-print flex flex-wrap items-center gap-3 bg-ink px-4 py-2 text-white">
+      <header className="no-print z-10 flex flex-wrap items-center gap-3 border-b-2 border-accent bg-ink px-4 py-2.5 text-white shadow-md">
         <button className="rounded border border-white/30 px-2 py-0.5 text-sm md:hidden" onClick={() => setMenu(!menu)}>☰</button>
         <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden><rect x="2" y="15" width="22" height="7" fill="#0e7c86" /><rect x="6" y="4" width="4" height="11" fill="#cbd5e1" /><rect x="16" y="4" width="4" height="11" fill="#cbd5e1" /></svg>
         <div className="min-w-0">
@@ -96,25 +98,40 @@ export default function App() {
         </div>
       </header>
       <div className="flex min-h-0 flex-1">
-        <nav className={`no-print ${menu ? 'block' : 'hidden'} absolute z-40 h-full w-60 shrink-0 overflow-y-auto bg-steel py-2 md:static md:block`}>
-          {TABS.map((t, i) => {
-            const st = tabState(i);
-            return (
-              <button key={t} onClick={() => { setTab(i); setMenu(false); }}
-                className={`flex w-full items-center gap-2 px-4 py-2 text-left text-[13px] ${tab === i ? 'bg-white/15 font-bold text-white' : 'text-slate-300 hover:bg-white/5'}`}>
-                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${tab === i ? 'bg-accent text-white' : 'bg-white/10'}`}>{i < 11 ? i + 1 : 'Σ'}</span>
-                <span className="flex-1">{t}</span>
-                {st && <span className="h-2.5 w-2.5 rounded-full" style={{ background: ESTADO_COLOR[st as keyof typeof ESTADO_COLOR] }} />}
-              </button>
-            );
-          })}
-          <div className="mt-4 px-4 text-[10px] leading-snug text-slate-400">
+        <nav className={`no-print ${menu ? 'block' : 'hidden'} absolute z-40 h-full w-64 shrink-0 overflow-y-auto bg-gradient-to-b from-steel to-ink py-3 md:static md:block`}>
+          {GRUPOS.map(([g, idx]) => (
+            <div key={g} className="mb-2">
+              <div className="px-5 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{g}</div>
+              {idx.map((i) => {
+                const st = tabState(i);
+                const act = tab === i;
+                return (
+                  <button key={i} onClick={() => { setTab(i); setMenu(false); }}
+                    className={`group mx-2 flex w-[calc(100%-1rem)] items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition ${act ? 'bg-white text-ink shadow' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>
+                    <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-bold ${act ? 'bg-accent text-white' : 'bg-white/10'}`}>{i < 11 ? i + 1 : '★'}</span>
+                    <span className={`flex-1 ${act ? 'font-bold' : ''}`}>{TABS[i]}</span>
+                    {st && <span className="h-2.5 w-2.5 rounded-full ring-2 ring-white/20" style={{ background: ESTADO_COLOR[st as keyof typeof ESTADO_COLOR] }} />}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+          <div className="mx-4 mt-4 rounded-lg bg-white/5 p-3 text-[10px] leading-snug text-slate-400">
             Herramienta de asistencia al cálculo. No reemplaza la revisión de un ingeniero estructural matriculado.
           </div>
         </nav>
-        <main className="print-root min-w-0 flex-1 overflow-y-auto p-3 md:p-5">
+        <main className="print-root min-w-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top_right,#dbe7ef,transparent_45%)] p-3 md:p-6">
           {err && <div className="mb-3 rounded border-l-4 border-fail bg-red-50 px-3 py-2 text-sm">Error de cálculo: {err}</div>}
-          <h2 className="no-print mb-3 text-[20px] font-bold text-ink">{tab < 11 ? `${tab + 1}. ` : ''}{TABS[tab]}</h2>
+          <div className="no-print mb-4 flex items-end justify-between gap-3 border-b border-slate-300/70 pb-3">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-accent">{GRUPOS.find(([, idx]) => idx.includes(tab))?.[0]}</div>
+              <h2 className="text-[24px] font-bold leading-tight text-ink">{TABS[tab]}</h2>
+            </div>
+            <div className="hidden gap-1.5 sm:flex">
+              <button disabled={ORDEN.indexOf(tab) <= 0} onClick={() => setTab(ORDEN[ORDEN.indexOf(tab) - 1])} className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-[12px] font-semibold text-steel shadow-sm disabled:opacity-30">← Anterior</button>
+              <button disabled={ORDEN.indexOf(tab) >= ORDEN.length - 1} onClick={() => setTab(ORDEN[ORDEN.indexOf(tab) + 1])} className="rounded-lg bg-accent px-3 py-1 text-[12px] font-semibold text-white shadow-sm disabled:opacity-30">Siguiente →</button>
+            </div>
+          </div>
           <ErrorBoundary resetKey={`${tab}|${JSON.stringify(p).length}`}>{body}</ErrorBoundary>
         </main>
       </div>

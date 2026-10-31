@@ -1,53 +1,46 @@
 import { useMemo, useRef, useState } from 'react';
 import type { TabProps } from '../App';
 import { Btn, Card, Note, download } from '../ui/components';
-import { LAYERS, longSection, planDrawing, transSection, type Layer } from './model';
+import { LAYERS, type Layer } from './model';
 import { SvgDrawing, printHTML, svgToPng, toDXF } from './render';
 import { BendingSchedule } from './Schedule';
-
-const SCALES = [20, 25, 50, 75, 100];
+import { ESCALAS, sheetA2 } from './sheet';
 
 export function DrawingsTab({ p, r }: TabProps) {
-  const [k, setK] = useState(50);
-  const [custom, setCustom] = useState('');
+  const [esc, setEsc] = useState<number | 'auto'>('auto');
   const [zoom, setZoom] = useState(1);
-  const [page, setPage] = useState<'A4 landscape' | 'A3 landscape' | 'A4 portrait' | 'A3 portrait'>('A3 landscape');
   const [mono, setMono] = useState(false);
   const [layers, setLayers] = useState<Set<Layer>>(new Set(LAYERS.map((l) => l.id)));
-  const [view, setView] = useState<'planta' | 'cA' | 'cB' | 'todo'>('todo');
-  const refs = useRef<Record<string, SVGSVGElement | null>>({});
-  const ds = useMemo(() => (r ? [planDrawing(p, r, k), longSection(p, r, k), transSection(p, r, k)] : []), [p, r, k]);
-  if (!r) return <Note kind="error">Sin resultados.</Note>;
-  const shown = view === 'todo' ? ds : ds.filter((d) => d.id === view);
-  const svgOf = (id: string) => refs.current[id];
-  const exportSvg = () => shown.forEach((d) => { const s = svgOf(d.id); if (s) download(`${p.meta.codigo}-${d.id}.svg`, new XMLSerializer().serializeToString(s), 'image/svg+xml'); });
-  const exportPng = () => shown.forEach((d) => { const s = svgOf(d.id); if (s) svgToPng(s, `${p.meta.codigo}-${d.id}.png`, 8, k); });
+  const ref = useRef<SVGSVGElement | null>(null);
+  const sheet = useMemo(() => (r ? sheetA2(p, r, esc) : null), [p, r, esc]);
+  if (!r || !sheet) return <Note kind="error">Sin resultados.</Note>;
+  const name = `${p.meta.codigo || 'zapata'}-A2`;
+  const exportSvg = () => { if (ref.current) download(`${name}.svg`, new XMLSerializer().serializeToString(ref.current), 'image/svg+xml'); };
   const print = () => {
-    const html = shown.map((d) => {
-      const s = svgOf(d.id);
-      if (!s) return '';
-      const c = s.cloneNode(true) as SVGSVGElement;
-      const vb = s.viewBox.baseVal;
-      c.setAttribute('width', `${vb.width / k}mm`);
-      c.setAttribute('height', `${vb.height / k}mm`);
-      return `<div class="pg"><div style="font:bold 12pt Arial;margin-bottom:4mm">${p.meta.obra} — ${d.title} — Esc. 1:${k}</div>${c.outerHTML}</div>`;
-    }).join('');
-    printHTML(html, page);
+    if (!ref.current) return;
+    const c = ref.current.cloneNode(true) as SVGSVGElement;
+    c.setAttribute('width', '594mm');
+    c.setAttribute('height', '420mm');
+    c.removeAttribute('style');
+    printHTML(`<div>${c.outerHTML}</div>`, '594mm 420mm', '0');
   };
   return (
     <div className="space-y-4">
-      <Card title="Controles">
+      <Card title="Plano A2 — encofrado y armadura">
         <div className="flex flex-wrap items-end gap-3 text-[12px]">
-          <label>Vista<br /><select className="rounded border px-2 py-1" value={view} onChange={(e) => setView(e.target.value as typeof view)}><option value="todo">Planta + cortes</option><option value="planta">Planta</option><option value="cA">Corte A-A</option><option value="cB">Corte B-B</option></select></label>
-          <label>Escala<br /><select className="rounded border px-2 py-1" value={SCALES.includes(k) ? k : 'otra'} onChange={(e) => { if (e.target.value !== 'otra') setK(Number(e.target.value)); }}>{SCALES.map((s) => <option key={s} value={s}>1:{s}</option>)}<option value="otra">Otra…</option></select></label>
-          <label>Otra escala 1:<br /><input className="w-16 rounded border px-2 py-1" value={custom} onChange={(e) => { setCustom(e.target.value); const v = Number(e.target.value); if (v >= 5 && v <= 500) setK(v); }} /></label>
-          <label>Hoja<br /><select className="rounded border px-2 py-1" value={page} onChange={(e) => setPage(e.target.value as typeof page)}><option>A3 landscape</option><option>A4 landscape</option><option>A3 portrait</option><option>A4 portrait</option></select></label>
-          <div>Zoom<br /><div className="flex gap-1"><Btn onClick={() => setZoom(Math.max(0.25, zoom / 1.25))}>−</Btn><Btn onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</Btn><Btn onClick={() => setZoom(Math.min(6, zoom * 1.25))}>+</Btn></div></div>
+          <label>Escala de plantas y cortes<br />
+            <select className="rounded border px-2 py-1" value={esc} onChange={(e) => setEsc(e.target.value === 'auto' ? 'auto' : Number(e.target.value))}>
+              <option value="auto">Automática (mayor que entra)</option>
+              {ESCALAS.filter((e) => e >= 20).map((s) => <option key={s} value={s}>1:{s}</option>)}
+            </select>
+          </label>
+          <div>Zoom<br /><div className="flex gap-1"><Btn onClick={() => setZoom(Math.max(0.5, zoom / 1.25))}>−</Btn><Btn onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</Btn><Btn onClick={() => setZoom(Math.min(8, zoom * 1.25))}>+</Btn></div></div>
           <label className="flex items-center gap-1 pb-1"><input type="checkbox" checked={mono} onChange={(e) => setMono(e.target.checked)} />Monocromo</label>
           <div className="ml-auto flex flex-wrap gap-1.5">
-            <Btn onClick={exportSvg}>SVG</Btn><Btn onClick={exportPng}>PNG</Btn>
-            <Btn onClick={() => download(`${p.meta.codigo}-planos.dxf`, toDXF(ds, k, layers), 'application/dxf')}>DXF básico</Btn>
-            <Btn kind="pri" onClick={print}>Imprimir / PDF</Btn>
+            <Btn onClick={exportSvg}>SVG</Btn>
+            <Btn onClick={() => ref.current && svgToPng(ref.current, `${name}.png`, 6, 1)}>PNG</Btn>
+            <Btn onClick={() => download(`${name}.dxf`, toDXF([sheet.drawing], 1, layers), 'application/dxf')}>DXF</Btn>
+            <Btn kind="pri" onClick={print}>Imprimir / PDF A2</Btn>
           </div>
         </div>
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
@@ -58,18 +51,17 @@ export function DrawingsTab({ p, r }: TabProps) {
             </label>
           ))}
         </div>
-        <div className="mt-1 text-[11px] text-slate-500">Textos dimensionados en mm de papel según la escala elegida. "Imprimir / PDF" respeta la escala real en la hoja seleccionada (elegir "Guardar como PDF" en el diálogo). DXF R12 con entidades LINE, CIRCLE y TEXT por capa; no se genera DWG.</div>
+        <div className="mt-2 space-y-1">
+          {!sheet.ajusta && <Note kind="warn">Con la escala 1:{sheet.k} las vistas no entran en la hoja A2: elija una escala menor (denominador mayor) o "Automática".</Note>}
+          <div className="text-[11px] text-slate-500">Hoja A2 594×420 mm con grilla de zonas, rótulo, notas y planilla de doblado. Plantas y cortes a 1:{sheet.k}; textos de 2 mm en papel. "Imprimir / PDF A2" respeta el tamaño real (elegir "Guardar como PDF" y tamaño A2 si el diálogo lo solicita). DXF R12 en mm de papel, por capas.</div>
+        </div>
       </Card>
-      {shown.map((d) => (
-        <Card key={d.id} title={`${d.title} — Esc. 1:${k}`}>
-          <div className="overflow-auto rounded border border-slate-200" style={{ maxHeight: '75vh' }}>
-            <div style={{ width: `${zoom * 100}%`, minWidth: 320 }}>
-              <SvgDrawing ref={(el) => { refs.current[d.id] = el; }} d={d} k={k} layers={layers} mono={mono} />
-            </div>
-          </div>
-        </Card>
-      ))}
-      <Card title="Planilla de doblado"><BendingSchedule p={p} r={r} /></Card>
+      <div className="overflow-auto rounded-xl border border-slate-300 bg-slate-600 p-3 shadow-inner" style={{ maxHeight: '82vh' }}>
+        <div className="mx-auto shadow-2xl" style={{ width: `${zoom * 100}%`, minWidth: 600 }}>
+          <SvgDrawing ref={ref} d={sheet.drawing} k={1} layers={layers} mono={mono} />
+        </div>
+      </div>
+      <Card title="Planilla de doblado (detalle)"><BendingSchedule p={p} r={r} /></Card>
     </div>
   );
 }

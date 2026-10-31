@@ -27,14 +27,14 @@ export function Tip({ t }: { t?: string }) {
 
 export function Card({ title, children, right, className = '' }: { title?: ReactNode; children: ReactNode; right?: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>
+    <div className={`rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(15,29,43,0.06),0_8px_24px_-12px_rgba(15,29,43,0.18)] ${className}`}>
       {title && (
-        <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
-          <h3 className="text-[13px] font-bold uppercase tracking-wide text-steel">{title}</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
+          <h3 className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.12em] text-steel"><span className="h-3.5 w-1 rounded-full bg-accent" />{title}</h3>
           {right}
         </div>
       )}
-      <div className="p-3">{children}</div>
+      <div className="p-4">{children}</div>
     </div>
   );
 }
@@ -140,7 +140,7 @@ export function Btn({ children, onClick, kind = 'sec', title, disabled }: { chil
 
 export function Stat({ label, value, sub, e }: { label: string; value: ReactNode; sub?: ReactNode; e?: Estado }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm" style={e ? { borderLeft: `4px solid ${ESTADO_COLOR[e]}` } : undefined}>
+    <div className="rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 shadow-sm transition hover:shadow-md" style={e ? { borderLeft: `4px solid ${ESTADO_COLOR[e]}` } : undefined}>
       <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</div>
       <div className="text-[17px] font-bold text-ink">{value}</div>
       {sub && <div className="text-[11px] text-slate-500">{sub}</div>}

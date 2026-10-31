@@ -8,6 +8,7 @@ import { widthAt, colDims } from '../core/geometry';
 import { qAt, type PressureField } from '../core/pressure';
 import type { BeamResult } from '../core/beam';
 import { localXY } from '../core/loads';
+import { AxoView } from '../drawings/AxoView';
 
 const kN = (v: number, d = 1) => fmt(v / 1e3, d);
 const kNm = (v: number, d = 1) => fmt(v / 1e6, d);
@@ -327,10 +328,29 @@ export function SummaryTab({ p, r, go }: TabProps) {
   const govMax = r.checks.filter((c) => Number.isFinite(c.ratio) && c.estado !== 'nc').sort((a, b) => b.ratio - a.ratio)[0];
   return (
     <div className="space-y-4">
-      <div className="rounded-lg p-4 text-white shadow" style={{ background: ESTADO_COLOR[r.estado.nivel] }}>
-        <div className="text-[11px] font-bold uppercase tracking-widest opacity-80">Estado general</div>
-        <div className="text-[24px] font-bold">{r.estado.texto}</div>
-        <div className="text-[12px] opacity-90">D/C máx = {fmt(r.estado.maxRatio, 3)}{govMax ? ` (${govMax.titulo}, ${govMax.combo})` : ''} · {fails.length} no verifican · {warns.length} advertencias / no calculadas</div>
+      <div className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"><AxoView p={p} r={r} height={400} /></div>
+        <div className="flex flex-col gap-3">
+          <div className="rounded-xl p-4 text-white shadow" style={{ background: `linear-gradient(135deg, ${ESTADO_COLOR[r.estado.nivel]}, #0f1d2b 140%)` }}>
+            <div className="text-[11px] font-bold uppercase tracking-widest opacity-80">Estado general</div>
+            <div className="text-[22px] font-bold leading-tight">{r.estado.texto}</div>
+            <div className="mt-1 text-[12px] opacity-90">D/C máx = {fmt(r.estado.maxRatio, 3)}{govMax ? ` (${govMax.titulo}, ${govMax.combo})` : ''}</div>
+            <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold">
+              <span className="rounded-full bg-white/20 px-2 py-0.5">{fails.length} no verifican</span>
+              <span className="rounded-full bg-white/20 px-2 py-0.5">{warns.length} advertencias / no calculadas</span>
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Zapata adoptada</div>
+            <div className="mt-1 text-[22px] font-bold text-ink">{m(s.L)} × {m(s.B1)}{p.footing.forma === 'trapezoidal' ? `/${m(s.B2)}` : ''} × {m(p.footing.h)} m</div>
+            <div className="text-[12px] text-slate-500">{p.footing.forma} · {p.columns.length} columnas · {p.mat.hormigon.nombre} / {p.mat.acero.nombre}</div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-lg bg-slate-50 py-2"><div className="text-[16px] font-bold">{fmt((r.cantidades.Vh + r.cantidades.Vped) / 1e9, 2)}</div><div className="text-[10px] uppercase text-slate-500">m³ hormigón</div></div>
+              <div className="rounded-lg bg-slate-50 py-2"><div className="text-[16px] font-bold">{fmt(r.cantidades.acero, 0)}</div><div className="text-[10px] uppercase text-slate-500">kg acero</div></div>
+              <div className="rounded-lg bg-slate-50 py-2"><div className="text-[16px] font-bold">{fmt(r.cantidades.kgm3, 0)}</div><div className="text-[10px] uppercase text-slate-500">kg/m³</div></div>
+            </div>
+          </div>
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Dimensiones" value={`${m(s.L)} × ${m(s.B1)}${p.footing.forma === 'trapezoidal' ? `/${m(s.B2)}` : ''} × ${m(p.footing.h)} m`} sub={p.footing.forma} />
