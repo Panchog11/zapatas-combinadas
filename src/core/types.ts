@@ -47,7 +47,14 @@ export interface Footing {
   vigasFundacion: string;
 }
 
-export interface Pedestal { activo: boolean; h: number; bx: number; by: number }
+/** Armado del pedestal: nx barras por cara paralela a X (incluye esquinas), ny por cara paralela a Y */
+export interface PedArmado { auto: boolean; nx: number; ny: number; db: number; dbE: number; sE: number }
+
+/** Pedestal o columna corta entre la zapata y el elemento apoyado */
+export interface Pedestal { activo: boolean; h: number; bx: number; by: number; rec: number; arm: PedArmado }
+
+/** Elemento que se apoya sobre la zapata o el pedestal */
+export type Apoyo = 'hormigon' | 'metalica' | 'equipo';
 
 export interface Column {
   id: string;
@@ -59,7 +66,8 @@ export interface Column {
   by: number;
   D: number;
   angulo: number;
-  zCarga: number; // altura sobre la cara superior de la zapata donde se aplican las cargas
+  apoyo: Apoyo;
+  zCarga: number; // altura adicional sobre el tope del pedestal (o de la zapata) donde se aplican las cargas
   condicion: 'auto' | 'interior' | 'borde' | 'esquina';
   material: string;
   rec: number;

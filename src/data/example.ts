@@ -1,6 +1,6 @@
 import { NORM_DEFAULT } from '../norm/config';
 import { UNIT_DEFAULT } from '../core/units';
-import type { Column, Combo, Loads, Project } from '../core/types';
+import type { Column, Combo, Loads, Pedestal, Project } from '../core/types';
 
 export const PESOS_LINEALES: Record<number, number> = {
   6: 0.222, 8: 0.395, 10: 0.617, 12: 0.888, 16: 1.578, 20: 2.466, 25: 3.853, 32: 6.313,
@@ -9,12 +9,32 @@ export const PESOS_LINEALES: Record<number, number> = {
 const kN = 1e3;
 export const zeroLoads = (): Loads => ({ N: 0, Vx: 0, Vy: 0, Mx: 0, My: 0, Mz: 0 });
 
+export const defaultPedestal = (): Pedestal => ({
+  activo: false, h: 500, bx: 600, by: 600, rec: 40,
+  arm: { auto: true, nx: 3, ny: 3, db: 16, dbE: 8, sE: 150 },
+});
+
+/** Completa campos agregados en versiones posteriores (proyectos guardados) */
+export function migrar(p: Project): Project {
+  const N = structuredClone(NORM_DEFAULT);
+  p.norm = { ...N, ...p.norm, referencias: { ...N.referencias, ...(p.norm?.referencias ?? {}) }, ped: { ...N.ped, ...(p.norm?.ped ?? {}) } };
+  p.casos ??= [];
+  p.plantillas ??= [];
+  for (const c of p.columns) {
+    c.apoyo ??= 'hormigon';
+    const d = defaultPedestal();
+    c.ped = { ...d, ...c.ped, arm: { ...d.arm, ...(c.ped?.arm ?? {}) } };
+  }
+  return p;
+}
+
 export function newColumn(id: string, x: number, y = 0): Column {
   return {
     id, nombre: id, x, y, forma: 'rect', bx: 400, by: 400, D: 400, angulo: 0, zCarga: 0,
     condicion: 'auto', material: 'H-25', rec: 30, nBarras: 8, dbBarras: 16, distribucion: '3 por cara',
     dbEstribo: 8, sEstribo: 150, lEspera: null, lAnclaje: null, gancho: '90',
-    ped: { activo: false, h: 0, bx: 600, by: 600 },
+    apoyo: 'hormigon',
+    ped: defaultPedestal(),
   };
 }
 

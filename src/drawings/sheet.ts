@@ -2,7 +2,7 @@ import type { Results } from '../core/analysis';
 import type { Project } from '../core/types';
 import { fmt } from '../core/units';
 import { ganchoExt, radioDoblado } from '../core/section';
-import { longSection, planDrawing, transSection, type Drawing, type Layer, type Prim } from './model';
+import { longSection, pedestalDetail, planDrawing, transSection, type Drawing, type Layer, type Prim } from './model';
 import { build3D, projectFaces, shade } from './axo';
 
 /** Hoja A2 apaisada (mm de papel, Y hacia arriba, origen abajo-izquierda) */
@@ -241,48 +241,98 @@ export function sheetA2(p: Project, r: Results, kPedida: number | 'auto'): Sheet
   Ln(R.x0, tabTop + 6, R.x1, tabTop + 6, 0.35);
 
   // ---- Vistas
+  // Bloque superior en dos columnas: [planta + corte A-A] de encofrado y de armadura, alineados según el eje longitudinal.
+  // Debajo: corte B-B, detalles de pedestal, axonometría y gancho (empaquetado por filas).
   const axo = axoDrawing(p, r);
   const gancho = hookDetail(p, r);
-  const views = (k: number) => {
-    const ds: [Drawing, number, string, string][] = [
-      [planDrawing(p, r, k, 'encofrado'), k, 'PLANTA DE ENCOFRADO', `ESC. 1:${k}`],
-      [planDrawing(p, r, k, 'armadura'), k, 'PLANTA DE ARMADURA', `ESC. 1:${k}`],
-      [longSection(p, r, k), k, 'CORTE A-A', `ESC. 1:${k}`],
-      [transSection(p, r, k), k, 'CORTE B-B', `ESC. 1:${k}`],
-    ];
-    const axoW = Math.min(150, VISTAS.x1 - VISTAS.x0);
-    const kAxo = (axo.bbox[2] - axo.bbox[0]) / axoW;
-    ds.push([axo, kAxo, 'AXONOMETRÍA', 'SIN ESCALA']);
-    ds.push([gancho, 10, 'DETALLE GANCHO 90°', 'ESC. 1:10']);
-    return ds.map(([d, kk, titulo, esc]): Item => ({ d, k: kk, titulo, esc, w: (d.bbox[2] - d.bbox[0]) / kk, h: (d.bbox[3] - d.bbox[1]) / kk + TIT }));
-  };
   const W = VISTAS.x1 - VISTAS.x0, Hd = VISTAS.y1 - VISTAS.y0;
-  let k = typeof kPedida === 'number' ? kPedida : ESCALAS[ESCALAS.length - 1];
-  let lay = pack(views(k), W);
-  let ajusta = lay.H <= Hd && lay.rows.every((rw) => rw.reduce((s, i) => s + i.w, 0) + GAP * (rw.length - 1) <= W);
-  if (kPedida === 'auto') {
-    for (const kk of ESCALAS.filter((e) => e >= 20)) {
-      const l = pack(views(kk), W);
-      if (l.H <= Hd && l.rows.every((rw) => rw.reduce((s, i) => s + i.w, 0) + GAP * (rw.length - 1) <= W)) { k = kk; lay = l; ajusta = true; break; }
+  interface Al { d: Drawing; anchor: number; titulo: string }
+  const columna = (ds: Al[], k: number) => {
+    const left = Math.max(...ds.map((q) => (q.anchor - q.d.bbox[0]) / k));
+    const right = Math.max(...ds.map((q) => (q.d.bbox[2] - q.anchor) / k));
+    const h = ds.reduce((s, q) => s + (q.d.bbox[3] - q.d.bbox[1]) / k + TIT, 0) + GAP * (ds.length - 1);
+    return { ds, left, w: left + right, h, k };
+  };
+  const build = (k: number) => {
+    const A = columna([
+      { d: planDrawing(p, r, k, 'encofrado'), anchor: f.x0, titulo: 'PLANTA DE ENCOFRADO' },
+      { d: longSection(p, r, k, 'encofrado'), anchor: 0, titulo: 'CORTE A-A — ENCOFRADO' },
+    ], k);
+    const B = columna([
+      { d: planDrawing(p, r, k, 'armadura'), anchor: f.x0, titulo: 'PLANTA DE ARMADURA' },
+      { d: longSection(p, r, k, 'armadura'), anchor: 0, titulo: 'CORTE A-A — ARMADURA' },
+    ], k);
+    const lado = A.w + GAP + B.w <= W;
+    const topH = lado ? Math.max(A.h, B.h) : A.h + GAP + B.h;
+    const extras: Item[] = [];
+    const it = (d: Drawing, kk: number, titulo: string, esc: string): Item => ({ d, k: kk, titulo, esc, w: (d.bbox[2] - d.bbox[0]) / kk, h: (d.bbox[3] - d.bbox[1]) / kk + TIT });
+    extras.push(it(transSection(p, r, k, 'armadura'), k, 'CORTE B-B — ARMADURA', `ESC. 1:${k}`));
+    // un detalle por cada pedestal distinto; el título lista las columnas que lo comparten
+    const grupos = new Map<string, string[]>();
+    for (const pr of r.peds) {
+      const c = p.columns.find((q) => q.id === pr.colId)!;
+      const key = JSON.stringify([c.ped.bx, c.ped.by, c.ped.h, c.ped.rec, pr.des.arm]);
+      grupos.set(key, [...(grupos.get(key) ?? []), pr.colId]);
     }
+    for (const ids of grupos.values()) {
+      const pr = r.peds.find((q) => q.colId === ids[0])!;
+      const c = p.columns.find((q) => q.id === pr.colId)!;
+      const nombres = ids.map((id) => p.columns.find((q) => q.id === id)!.nombre).join(', ');
+      const kd = Math.max(c.ped.bx, c.ped.by) > 450 ? 20 : 10;
+      const d = pedestalDetail(p, r, pr.colId, kd);
+      if (d) extras.push(it(d, kd, `ARMADURA PEDESTAL ${nombres}`, `ESC. 1:${kd}`));
+    }
+    const axoW = Math.min(130, W / 2);
+    extras.push(it(axo, (axo.bbox[2] - axo.bbox[0]) / axoW, 'AXONOMETRÍA', 'SIN ESCALA'));
+    extras.push(it(gancho, 10, 'DETALLE GANCHO 90°', 'ESC. 1:10'));
+    const ex = pack(extras, W);
+    const ok = Math.max(A.w, B.w) <= W && topH + GAP + ex.H <= Hd && ex.rows.every((rw) => rw.reduce((s, i) => s + i.w, 0) + GAP * (rw.length - 1) <= W);
+    return { A, B, lado, topH, ex, ok };
+  };
+  let k = typeof kPedida === 'number' ? kPedida : ESCALAS[ESCALAS.length - 1];
+  let lay = build(k);
+  if (kPedida === 'auto') {
+    for (const kk of ESCALAS.filter((e) => e >= 20)) { const l = build(kk); if (l.ok) { k = kk; lay = l; break; } }
   }
-  // distribución vertical uniforme de filas y horizontal dentro de cada fila
-  const extraV = Math.max(0, (Hd - lay.H) / (lay.rows.length + 1));
-  let yy = VISTAS.y1 - extraV;
-  for (const rw of lay.rows) {
+  const ajusta = lay.ok;
+  const titulo = (x: number, top: number, t: string, esc: string) => {
+    T(x, top - 4, t, 3.5, { bold: true });
+    Ln(x, top - 5, x + t.length * 3.5 * 0.62, top - 5, 0.35);
+    T(x, top - 8.2, esc, TXT);
+  };
+  const ponerColumna = (C: ReturnType<typeof columna>, x0: number, top: number) => {
+    const xa = x0 + C.left; // abscisa en papel del borde izquierdo de la zapata, común a planta y corte
+    let y = top;
+    for (const q of C.ds) {
+      const hq = (q.d.bbox[3] - q.d.bbox[1]) / C.k;
+      titulo(x0, y, q.titulo, `ESC. 1:${C.k}`);
+      P.push(...placePrims(q.d, C.k, xa - (q.anchor - q.d.bbox[0]) / C.k, y - TIT - hq));
+      y -= hq + TIT + GAP;
+    }
+  };
+  const libreV = Math.max(0, Hd - lay.topH - GAP - lay.ex.H);
+  const sep = libreV / 3;
+  let yy = VISTAS.y1 - sep;
+  if (lay.lado) {
+    const libreH = (W - lay.A.w - lay.B.w) / 3;
+    ponerColumna(lay.A, VISTAS.x0 + libreH, yy);
+    ponerColumna(lay.B, VISTAS.x0 + 2 * libreH + lay.A.w, yy);
+  } else {
+    ponerColumna(lay.A, VISTAS.x0 + (W - lay.A.w) / 2, yy);
+    ponerColumna(lay.B, VISTAS.x0 + (W - lay.B.w) / 2, yy - lay.A.h - GAP);
+  }
+  yy -= lay.topH + GAP + sep;
+  for (const rw of lay.ex.rows) {
     const hRow = Math.max(...rw.map((i) => i.h));
     const sumW = rw.reduce((s, i) => s + i.w, 0);
     const gapH = Math.max(GAP, (W - sumW) / (rw.length + 1));
     let xx = VISTAS.x0 + (rw.length === 1 ? (W - sumW) / 2 : gapH);
-    for (const it of rw) {
-      const top = yy;
-      T(xx, top - 4, it.titulo, 3.5, { bold: true });
-      Ln(xx, top - 5, xx + it.titulo.length * 3.5 * 0.62, top - 5, 0.35);
-      T(xx, top - 8.2, it.esc, TXT);
-      P.push(...placePrims(it.d, it.k, xx, top - it.h));
-      xx += it.w + gapH;
+    for (const q of rw) {
+      titulo(xx, yy, q.titulo, q.esc);
+      P.push(...placePrims(q.d, q.k, xx, yy - q.h));
+      xx += q.w + gapH;
     }
-    yy -= hRow + Math.max(GAP, extraV);
+    yy -= hRow + GAP;
   }
   // completar escala en rótulo
   (P[iEsc] as Extract<Prim, { t: 'text' }>).s = escTxt(k);

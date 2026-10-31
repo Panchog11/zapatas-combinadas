@@ -9,6 +9,7 @@ import { qAt, type PressureField } from '../core/pressure';
 import type { BeamResult } from '../core/beam';
 import { localXY } from '../core/loads';
 import { AxoView } from '../drawings/AxoView';
+import { PedSummary } from './PedestalPanel';
 
 const kN = (v: number, d = 1) => fmt(v / 1e3, d);
 const kNm = (v: number, d = 1) => fmt(v / 1e6, d);
@@ -300,7 +301,7 @@ export function RebarTab({ p, r, go }: TabProps) {
       </div>
       <Note>Altura útil por capa: long. inf. d = {fmt(r.d.LI, 0)} mm · transv. inf. d = {fmt(r.d.TI, 0)} mm · long. sup. d = {fmt(r.d.LS, 0)} mm · transv. sup. d = {fmt(r.d.TS, 0)} mm · punzonamiento d = {fmt(r.d.punz, 0)} mm. Para modificar diámetro y separación manualmente: <button className="underline" onClick={() => go(5)}>Criterios de cálculo</button>.</Note>
       <Card title="Verificaciones de armadura, anclajes y esperas">
-        <ChecksTable checks={r.checks.filter((c) => c.grupo === 'est' && !c.id.includes('corte') && !c.id.includes('punz') && !c.id.includes('aplast'))} />
+        <ChecksTable checks={r.checks.filter((c) => c.grupo === 'est' && !c.id.includes('corte') && !c.id.includes('punz') && !c.id.includes('aplast') && !c.id.startsWith('est-ped-') && !c.id.startsWith('est-pernos'))} />
       </Card>
       <Card title="Barras generadas">
         <table className="tbl"><thead><tr><th>Marca</th><th>Elemento</th><th>Cant.</th><th>Ø</th><th>Long. unit. [m]</th><th>Peso [kg]</th><th>Ubicación</th><th>Observaciones</th></tr></thead><tbody>
@@ -308,7 +309,14 @@ export function RebarTab({ p, r, go }: TabProps) {
         </tbody></table>
         <div className="mt-1 text-[11px] text-slate-500">Las barras no se cortan en el punto teórico de momento nulo: los refuerzos se prolongan máx(d; 12db) más allá de la sección donde dejan de ser necesarios y al menos ld desde la sección de máximo momento. Refuerzos de punzonamiento: no implementados (si no verifica, aumentar h).</div>
       </Card>
-      {p.columns.some((c) => c.ped.activo) && <Note kind="warn">Pedestales: se dispone armadura longitudinal mínima 0,005·Ag y estribos de la columna. El diseño del pedestal como columna corta no está implementado.</Note>}
+      {r.peds.length > 0 && (
+        <Card title="Pedestales — columna corta">
+          <div className="grid gap-3 lg:grid-cols-2">
+            {r.peds.map((pr) => <div key={pr.colId}><div className="mb-1 text-[13px] font-bold">{pr.col} — {pr.bx}×{pr.by} mm, h = {pr.hp} mm</div><PedSummary pr={pr} n={p.norm} /></div>)}
+          </div>
+          <div className="mt-3"><ChecksTable checks={r.checks.filter((c) => c.id.startsWith('est-ped-') || c.id.startsWith('est-pernos'))} /></div>
+        </Card>
+      )}
     </div>
   );
 }

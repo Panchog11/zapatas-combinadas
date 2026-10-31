@@ -1,7 +1,7 @@
 import { widthAt, colDims, type Shape } from './geometry';
-import { ld, longGancho90, radioDoblado, ganchoExt, barArea } from './section';
-import type { Project } from './types';
-import type { LongFace, TransFace } from './analysis';
+import { ld, longGancho90, radioDoblado, ganchoExt } from './section';
+import type { Column, Project } from './types';
+import type { LongFace, PedRes, TransFace } from './analysis';
 
 export type Forma = 'recta' | 'L' | 'U' | 'Ui' | 'estribo' | 'caballete';
 
@@ -35,7 +35,7 @@ export const pesoLineal = (p: Project, db: number) => p.pesosLineales[db] ?? (Ma
 
 export function buildSchedule(
   p: Project, s: Shape,
-  r: { long: { inf: LongFace; sup: LongFace }; trans: { inf: TransFace; sup: TransFace }; dd: { LI: number; TI: number; LS: number; TS: number } },
+  r: { long: { inf: LongFace; sup: LongFace }; trans: { inf: TransFace; sup: TransFace }; dd: { LI: number; TI: number; LS: number; TS: number }; peds?: PedRes[] },
   full = true,
 ): Schedule {
   const f = p.footing, n = p.norm, fc = p.mat.hormigon.fc, fy = p.mat.acero.fy;
@@ -98,27 +98,34 @@ export function buildSchedule(
   }
   // Esperas, estribos y pedestales
   const dbMalla = (r.long.inf.total?.db ?? 16) + (r.trans.inf.sel?.db ?? 12);
+  const embed = f.h - f.recInf - dbMalla;
+  const gancho = (db: number, tipo: Column['gancho']) => (tipo === 'recto' ? 0 : tipo === '90' ? radioDoblado(db, n) + db + ganchoExt(db, '90', n) : Math.max(4 * db, 65) + radioDoblado(db, n) * 2);
+  const estribo = (bx: number, by: number, rec: number, dbE: number) => {
+    const sa = bx - 2 * rec, sb = by - 2 * rec, ext = Math.max(n.ganchos.estriboExtDb * dbE, 75);
+    return { sa, sb, ext, lu: 2 * (sa + sb) + 2 * ext };
+  };
   for (const c of p.columns) {
-    const db = c.dbBarras;
-    const embed = f.h - f.recInf - dbMalla;
-    const lap = c.lEspera ?? Math.max(n.empalmeClaseB * ld(db, fc, fy, n), Math.max(n.empalmeCompresion.coef * fy * db, n.empalmeCompresion.minimo));
     const hp = c.ped.activo ? c.ped.h : 0;
-    const A = embed + hp + lap;
-    const pie = c.gancho === 'recto' ? 0 : c.gancho === '90' ? radioDoblado(db, n) + db + ganchoExt(db, '90', n) : Math.max(4 * db, 65) + radioDoblado(db, n) * 2;
-    add({ elemento: `Esperas ${c.nombre}`, db, forma: pie ? 'L' : 'recta', A, B: pie, C: 0, D: 0, gancho: pie, lu: A + pie, n: c.nBarras, ubic: `Columna ${c.nombre}`, obs: `Empalme sobre ${c.ped.activo ? 'pedestal' : 'zapata'}: ${Math.round(lap)} mm${c.lEspera ? ' (usuario)' : ' (máx. clase B / compresión)'}`, grupo: 'espera', col: c.id });
-    const cd = c.ped.activo ? { bx: c.ped.bx, by: c.ped.by } : colDims(c);
-    const sa = cd.bx - 2 * c.rec, sb = cd.by - 2 * c.rec;
-    const ext = Math.max(n.ganchos.estriboExtDb * c.dbEstribo, 75);
-    const nEst = 2 + (hp > 0 ? Math.ceil(hp / c.sEstribo) + 1 : 0);
-    add({ elemento: `Estribos ${c.nombre}`, db: c.dbEstribo, forma: 'estribo', A: sa, B: sb, C: 0, D: 0, gancho: ext, lu: 2 * (sa + sb) + 2 * ext, n: nEst, ubic: hp > 0 ? `Pedestal ${c.nombre} c/${c.sEstribo} + 2 en zapata` : `En zapata (montaje esperas)`, obs: 'Ganchos 135°', grupo: 'estribo', col: c.id });
-    if (c.ped.activo) {
-      const req = 0.005 * c.ped.bx * c.ped.by;
-      const falta = req - c.nBarras * barArea(db);
-      if (falta > 0) {
-        const nAdd = Math.max(4, Math.ceil(falta / barArea(db)));
-        const lp = embed + hp - p.footing.recSup;
-        add({ elemento: `Barras pedestal ${c.nombre}`, db, forma: 'L', A: lp, B: pie || 12 * db, C: 0, D: 0, gancho: pie || 12 * db, lu: lp + (pie || 12 * db), n: nAdd, ubic: `Perímetro del pedestal`, obs: 'Hasta 0,005·Ag pedestal (hipótesis)', grupo: 'ped', col: c.id });
+    const ped = r.peds?.find((q) => q.colId === c.id);
+    if (c.apoyo === 'hormigon') {
+      const db = c.dbBarras;
+      const lap = c.lEspera ?? Math.max(n.empalmeClaseB * ld(db, fc, fy, n), Math.max(n.empalmeCompresion.coef * fy * db, n.empalmeCompresion.minimo));
+      const A = embed + hp + lap;
+      const pie = gancho(db, c.gancho);
+      add({ elemento: `Esperas ${c.nombre}`, db, forma: pie ? 'L' : 'recta', A, B: pie, C: 0, D: 0, gancho: pie, lu: A + pie, n: c.nBarras, ubic: `Columna ${c.nombre}`, obs: `Empalme sobre ${c.ped.activo ? 'pedestal' : 'zapata'}: ${Math.round(lap)} mm${c.lEspera ? ' (usuario)' : ' (máx. clase B / compresión)'}`, grupo: 'espera', col: c.id });
+      if (!ped) {
+        const cd = colDims(c), e = estribo(cd.bx, cd.by, c.rec, c.dbEstribo);
+        add({ elemento: `Estribos ${c.nombre}`, db: c.dbEstribo, forma: 'estribo', A: e.sa, B: e.sb, C: 0, D: 0, gancho: e.ext, lu: e.lu, n: 2, ubic: 'En zapata (montaje esperas)', obs: 'Ganchos 135°', grupo: 'estribo', col: c.id });
       }
+    }
+    if (ped) {
+      const a = ped.des.arm, nb = 2 * a.nx + 2 * a.ny - 4;
+      const pie = gancho(a.db, '90');
+      const A = embed + hp - c.ped.rec;
+      add({ elemento: `Barras pedestal ${c.nombre}`, db: a.db, forma: 'L', A, B: pie, C: 0, D: 0, gancho: pie, lu: A + pie, n: nb, ubic: `Pedestal ${c.ped.bx}×${c.ped.by}, ${a.nx}×${a.ny} por cara`, obs: 'Gancho 90° apoyado sobre la malla inferior', grupo: 'ped', col: c.id });
+      const e = estribo(c.ped.bx, c.ped.by, c.ped.rec, a.dbE);
+      const nE = Math.ceil((hp - 50) / a.sE) + 1 + 2;
+      add({ elemento: `Estribos pedestal ${c.nombre}`, db: a.dbE, forma: 'estribo', A: e.sa, B: e.sb, C: 0, D: 0, gancho: e.ext, lu: e.lu, n: nE, ubic: `Pedestal c/${a.sE} + 2 en zapata`, obs: 'Ganchos 135°', grupo: 'estribo', col: c.id });
     }
   }
   if (full) {

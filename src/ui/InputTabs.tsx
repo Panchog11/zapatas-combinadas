@@ -9,6 +9,7 @@ import { autosize, type AutoResult } from '../core/autosize';
 import { fmt } from '../core/units';
 import { SignConvention } from './SignConvention';
 import { CasesPanel } from './CasesPanel';
+import { PedestalPanel } from './PedestalPanel';
 import { expresion } from '../core/combos';
 
 // ---------------- 1. Proyecto y normativa ----------------
@@ -215,7 +216,7 @@ export function GeometryTab({ p, set }: TabProps) {
 const LKEYS: (keyof Loads)[] = ['N', 'Vx', 'Vy', 'Mx', 'My', 'Mz'];
 const isM = (k: keyof Loads) => k.startsWith('M');
 
-export function ColumnsTab({ p, set }: TabProps) {
+export function ColumnsTab({ p, set, r }: TabProps) {
   const u = p.units;
   const [sel, setSel] = useState(p.combos[0]?.id ?? '');
   const combo = p.combos.find((c) => c.id === sel) ?? p.combos[0];
@@ -267,9 +268,9 @@ export function ColumnsTab({ p, set }: TabProps) {
           <table className="tbl min-w-[1500px]">
             <thead><tr>
               <th>Id</th><th>Nombre</th><th>X [{u.length}]</th><th>Y [{u.length}]</th><th>Forma</th><th>bx [{u.length}]</th><th>by [{u.length}]</th><th>D [{u.length}]</th>
-              <th>Áng. [°]</th><th title="Altura de aplicación de cargas sobre la cara superior de la zapata">z carga [{u.length}]</th><th>Condición</th><th>Material</th><th>Rec. [{u.length}]</th>
+              <th>Áng. [°]</th><th title="Altura adicional sobre el tope del pedestal (o de la zapata) donde se aplican las cargas">z carga [{u.length}]</th><th>Condición</th><th>Material</th><th>Rec. [{u.length}]</th>
               <th>n barras</th><th>Ø long [mm]</th><th>Distribución</th><th>Ø estribo [mm]</th><th>s estribo [{u.length}]</th><th>Gancho espera</th><th title="Vacío = automática">L espera [{u.length}]</th>
-              <th>Pedestal</th><th>h ped [{u.length}]</th><th>bx ped</th><th>by ped</th><th></th>
+              <th></th>
             </tr></thead>
             <tbody>
               {p.columns.map((c) => (
@@ -287,10 +288,6 @@ export function ColumnsTab({ p, set }: TabProps) {
                   <td>{colField(c, 'dbEstribo', false)}</td><td>{colField(c, 'sEstribo')}</td>
                   <td><select value={c.gancho} onChange={(e) => set((d) => { d.columns.find((x) => x.id === c.id)!.gancho = e.target.value as Column['gancho']; })}><option value="recto">Recto</option><option value="90">90°</option><option value="180">180°</option></select></td>
                   <td><input value={c.lEspera === null ? '' : +(c.lEspera / fL).toPrecision(8)} placeholder="auto" onChange={(e) => { const t = e.target.value.trim(); const v = Number(t.replace(',', '.')); set((d) => { d.columns.find((x) => x.id === c.id)!.lEspera = t === '' || !Number.isFinite(v) ? null : v * fL; }); }} /></td>
-                  <td><input type="checkbox" checked={c.ped.activo} onChange={(e) => set((d) => { d.columns.find((x) => x.id === c.id)!.ped.activo = e.target.checked; })} /></td>
-                  {(['h', 'bx', 'by'] as const).map((k) => (
-                    <td key={k}><input disabled={!c.ped.activo} value={+(c.ped[k] / fL).toPrecision(8)} onChange={(e) => { const v = Number(e.target.value.replace(',', '.')); if (Number.isFinite(v)) set((d) => { d.columns.find((x) => x.id === c.id)!.ped[k] = v * fL; }); }} /></td>
-                  ))}
                   <td className="whitespace-nowrap">
                     <button className="mr-1 text-accent" title="Copiar" onClick={() => set((d) => {
                       const id = nextId('C', d.columns.map((x) => x.id));
@@ -309,8 +306,10 @@ export function ColumnsTab({ p, set }: TabProps) {
             </tbody>
           </table>
         </div>
-        <div className="mt-2 text-[11px] text-slate-500">Mínimo 2 columnas. Las columnas circulares se tratan como cuadradas de igual área para cortes y punzonamiento. "z carga": altura sobre la cara superior de la zapata donde se aplican las cargas (p. ej. tope del pedestal).</div>
+        <div className="mt-2 text-[11px] text-slate-500">Mínimo 2 columnas. Las columnas circulares se tratan como cuadradas de igual área para cortes y punzonamiento. "z carga": altura adicional sobre el tope del pedestal (o de la zapata) donde se aplican las cargas. Pedestales y tipo de apoyo: ver la tarjeta siguiente.</div>
       </Card>
+
+      <PedestalPanel p={p} set={set} r={r} />
 
       <CasesPanel p={p} set={set} />
 

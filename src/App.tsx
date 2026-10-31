@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { analyze, type Results } from './core/analysis';
 import type { Project } from './core/types';
-import { exampleProject } from './data/example';
+import { exampleProject, migrar } from './data/example';
 import { Badge, Btn, download, ESTADO_COLOR } from './ui/components';
 import { ProjectTab, GeometryTab, ColumnsTab, GeoTab, MaterialsTab, CriteriaTab } from './ui/InputTabs';
 import { GeoResultsTab, ForcesTab, RebarTab, SummaryTab } from './ui/ResultTabs';
@@ -26,8 +26,7 @@ function load(): Project {
     if (s) {
       const p = JSON.parse(s) as Project;
       p.norm = { ...structuredClone(NORM_DEFAULT), ...p.norm };
-      p.casos ??= [];
-      p.plantillas ??= [];
+      migrar(p);
       return p;
     }
   } catch { /* proyecto corrupto: se usa el ejemplo */ }
@@ -56,7 +55,7 @@ export default function App() {
     };
     if (i === 6) return pick((id) => id.startsWith('geo'));
     if (i === 7) return pick((id) => id.includes('corte') || id.includes('punz'));
-    if (i === 8) return pick((id) => id.includes('flex') || id.includes('rho') || id.includes('sep') || id.includes('anc') || id.includes('banda'));
+    if (i === 8) return pick((id) => id.includes('flex') || id.includes('rho') || id.includes('sep') || id.includes('anc') || id.includes('banda') || id.startsWith('est-ped'));
     if (i === 11) return r.estado.nivel;
     return null;
   };
@@ -89,8 +88,7 @@ export default function App() {
               const q = JSON.parse(await f.text()) as Project;
               if (!q.footing || !q.columns || !q.combos) throw new Error('Formato no reconocido');
               q.norm = { ...structuredClone(NORM_DEFAULT), ...q.norm };
-              q.casos ??= [];
-              q.plantillas ??= [];
+              migrar(q);
               setP(q);
             } catch (er) { alert(`No se pudo abrir el archivo: ${er}`); }
             e.target.value = '';

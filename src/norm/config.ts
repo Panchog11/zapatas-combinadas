@@ -38,6 +38,22 @@ export interface NormConfig {
   ganchos: { ext90Db: number; ext180Db: number; ext180Min: number; diamDoblado: { hasta: number; factor: number }[]; estriboExtDb: number };
   aplastamiento: { coef: number; raizMax: number };
   esperasCuantiaMin: number; // As esperas ≥ cuantía·Ag columna
+  // Pedestal / columna corta
+  ped: {
+    phiComp: number; // estribos cerrados
+    pnMax: number; // factor de Pn,máx
+    rhoMin: number;
+    rhoMax: number;
+    sLibreAbs: number;
+    sLibreDb: number;
+    estriboDb: number; // s ≤ estriboDb·db long.
+    estriboDbE: number; // s ≤ estriboDbE·db estribo
+    vcAxial: number; // Vc = (1 + Nu/(vcAxial·Ag))·(1/6)·√f'c·bw·d
+    torsionUmbral: number; // Tth = φ·coef·√f'c·Acp²/pcp·√(1 + Nu/(Ag·√f'c/3))
+    kEsbeltez: number;
+    esbeltezLim: number;
+    gammaPP: number; // mayoración del peso propio del pedestal
+  };
   // Geotecnia (factores por defecto, editables en Geotecnia)
   fsPortante: number;
   fsFlotacion: number;
@@ -83,6 +99,7 @@ export const NORM_DEFAULT: NormConfig = {
   },
   aplastamiento: { coef: 0.85, raizMax: 2 },
   esperasCuantiaMin: 0.005,
+  ped: { phiComp: 0.65, pnMax: 0.8, rhoMin: 0.01, rhoMax: 0.08, sLibreAbs: 40, sLibreDb: 1.5, estriboDb: 16, estriboDbE: 48, vcAxial: 14, torsionUmbral: 1 / 12, kEsbeltez: 2.0, esbeltezLim: 22, gammaPP: 1.2 },
   fsPortante: 3,
   fsFlotacion: 1.1,
   pesoPropioPreliminar: 1.1,
@@ -108,6 +125,13 @@ export const NORM_DEFAULT: NormConfig = {
     esperas: 'CIRSOC 201 §15.8.2.1',
     zapatas: 'CIRSOC 201 Cap. 15',
     suelo: 'CIRSOC 401 / estudio de suelos',
+    pedFlex: 'CIRSOC 201 §10.2, §10.3.6 y §9.3.2.2 (flexo-compresión biaxial por compatibilidad)',
+    pedCuantia: 'CIRSOC 201 §10.9.1',
+    pedCorte: 'CIRSOC 201 §11.3.1.2 y §11.5',
+    pedTorsion: 'CIRSOC 201 §11.6.1',
+    pedEstribos: 'CIRSOC 201 §7.10.5',
+    pedSepar: 'CIRSOC 201 §7.6.3',
+    pedEsbeltez: 'CIRSOC 201 §10.10 / §10.12',
   },
 };
 

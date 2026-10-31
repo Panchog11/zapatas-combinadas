@@ -134,8 +134,8 @@ export function planDrawing(p: Project, r: Results, k: number, modo: 'encofrado'
     }
   };
   transBars('inf'); transBars('sup');
-  P.push({ t: 'text', x: X(s.L) + 3 * k, y: Y(-Bmin / 2) + 1 * k, s: 'ARM. INFERIOR', h: 2, layer: 'armInf', bold: true });
-  P.push({ t: 'text', x: X(s.L) + 3 * k, y: Y(Bmin / 2) - 3 * k, s: 'ARM. SUPERIOR', h: 2, layer: 'armSup', bold: true });
+  P.push({ t: 'text', x: X(0) - 2 * k, y: Y(-Bmin / 4), s: 'ARM. INFERIOR', h: 2, layer: 'armInf', bold: true, anchor: 'middle', rot: 90 });
+  P.push({ t: 'text', x: X(0) - 2 * k, y: Y(Bmin / 4), s: 'ARM. SUPERIOR', h: 2, layer: 'armSup', bold: true, anchor: 'middle', rot: 90 });
   // Marcas (globo con número) para cada marca relevante
   const marca = (g: string) => r.schedule.marcas.filter((m) => m.grupo === g);
   const label = (x: number, y: number, txt: string, layer: Layer) => P.push({ t: 'text', x, y, s: txt, h: 2, layer, box: true });
@@ -173,43 +173,16 @@ export function governingCol(p: Project, r: Results) {
 }
 
 /** Corte longitudinal A-A: x horizontal, z vertical (cota relativa al terreno) */
-export function longSection(p: Project, r: Results, k: number): Drawing {
+export function longSection(p: Project, r: Results, k: number, modo: 'encofrado' | 'armadura' = 'armadura'): Drawing {
   const f = p.footing, s = r.shape, P: Prim[] = [];
   const zb = f.cotaTerreno - f.Df, zt = zb + f.h, zg = f.cotaTerreno;
   const X = (x: number) => x;
   common(P, f, k, 0, s.L, zb, zt, zg, 'x');
-  // columnas
-  for (const c of p.columns) {
-    const { x } = localXY(p, c);
-    const d = colDims(c);
-    const hp = c.ped.activo ? c.ped.h : 0;
-    if (hp > 0) P.push({ t: 'poly', pts: [[X(x - c.ped.bx / 2), zt], [X(x + c.ped.bx / 2), zt], [X(x + c.ped.bx / 2), zt + hp], [X(x - c.ped.bx / 2), zt + hp]], closed: true, layer: 'columnas', w: 0.5 });
-    const top = Math.max(zg, zt + hp) + 600;
-    P.push({ t: 'poly', pts: [[X(x - d.bx / 2), zt + hp], [X(x - d.bx / 2), top], [X(x + d.bx / 2), top], [X(x + d.bx / 2), zt + hp]], layer: 'columnas', w: 0.5 });
-    P.push({ t: 'poly', pts: [[X(x - d.bx / 2 - 3 * k), top], [X(x - 2 * k), top], [X(x), top + 4 * k], [X(x + 1 * k), top - 4 * k], [X(x + 3 * k), top], [X(x + d.bx / 2 + 3 * k), top]], layer: 'columnas', w: 0.25 });
-    P.push({ t: 'line', x1: X(x), y1: zb - 15 * k, x2: X(x), y2: top + 8 * k, layer: 'ejes', dash: 'axis', w: 0.18 });
-    P.push({ t: 'text', x: X(x), y: top + 9 * k, s: c.nombre, h: 2.5, layer: 'textos', anchor: 'middle', bold: true });
-    // esperas
-    const m = r.schedule.marcas.find((q) => q.grupo === 'espera' && q.col === c.id);
-    if (m) {
-      const zbar = zb + f.recInf + (r.long.inf.total?.db ?? 16) + (r.trans.inf.sel?.db ?? 12) + m.db / 2;
-      const cov = c.rec + c.dbEstribo + m.db / 2;
-      for (const sx of [-1, 1]) {
-        const xb = x + sx * (d.bx / 2 - cov);
-        const pts: [number, number][] = [[X(xb), zbar + m.A], [X(xb), zbar]];
-        if (m.B) pts.push([X(xb + sx * m.B), zbar]);
-        P.push({ t: 'poly', pts, layer: 'esperas', w: 0.4 });
-      }
-      P.push({ t: 'text', x: X(x + d.bx / 2 + 2 * k), y: zt + hp + 0.6 * m.A, s: `(${m.marca}) ${m.n}Ø${m.db} L=${mm(m.lu)}`, h: 2, layer: 'esperas', box: true });
-      const e = r.schedule.marcas.find((q) => q.grupo === 'estribo' && q.col === c.id);
-      if (e) {
-        const zs = [zt - 80, zt - Math.min(250, f.h / 2)];
-        if (hp > 0) for (let z = zt + 50; z <= zt + hp - 50; z += c.sEstribo) zs.push(z);
-        for (const z of zs) P.push({ t: 'line', x1: X(x - d.bx / 2 + c.rec), y1: z, x2: X(x + d.bx / 2 - c.rec), y2: z, layer: 'esperas', w: 0.25 });
-        P.push({ t: 'text', x: X(x - d.bx / 2 - 2 * k), y: zt + 2 * k, s: `(${e.marca}) Ø${e.db}`, h: 2, layer: 'esperas', anchor: 'end' });
-      }
-    }
-  }
+  for (const c of p.columns) apoyoElev(P, p, r, c, localXY(p, c).x, colDims(c).bx, c.ped.bx, k, modo === 'armadura');
+  const xs = [0, ...p.columns.map((c) => localXY(p, c).x).sort((q, w) => q - w), s.L];
+  P.push({ t: 'dim', x1: 0, y1: zb, x2: s.L, y2: zb, off: -18 * k, layer: 'cotas' });
+  for (let i = 0; i < xs.length - 1; i++) P.push({ t: 'dim', x1: xs[i], y1: zb, x2: xs[i + 1], y2: zb, off: -24 * k, layer: 'cotas' });
+  if (modo === 'encofrado') return { id: 'cAe', title: 'Corte A-A (encofrado)', prims: P, bbox: bboxOf(P, k) };
   // armadura longitudinal
   const L = r.long, T = r.trans, rl = f.recLat;
   const extOut = p.crit.capaInferiorExterna === 'long';
@@ -238,14 +211,11 @@ export function longSection(p: Project, r: Results, k: number): Drawing {
     for (let x = rl; x <= s.L - rl + 1; x += F.sel.s) P.push({ t: 'circle', x: X(x), y: z, r: Math.max(F.sel.db / 2, 0.5 * k), layer: face === 'inf' ? 'armInf' : 'armSup', fill: '#0f1d2b' });
   };
   dots('inf'); dots('sup');
-  P.push({ t: 'dim', x1: 0, y1: zb, x2: s.L, y2: zb, off: -18 * k, layer: 'cotas' });
-  const xs = [0, ...p.columns.map((c) => localXY(p, c).x).sort((a, b) => a - b), s.L];
-  for (let i = 0; i < xs.length - 1; i++) P.push({ t: 'dim', x1: xs[i], y1: zb, x2: xs[i + 1], y2: zb, off: -24 * k, layer: 'cotas' });
   return { id: 'cA', title: 'Corte A-A (longitudinal)', prims: P, bbox: bboxOf(P, k) };
 }
 
 /** Corte transversal B-B por la columna más cargada */
-export function transSection(p: Project, r: Results, k: number): Drawing {
+export function transSection(p: Project, r: Results, k: number, modo: 'encofrado' | 'armadura' = 'armadura'): Drawing {
   const f = p.footing, s = r.shape, P: Prim[] = [];
   const c = governingCol(p, r);
   const { x: xc, y: yc } = localXY(p, c);
@@ -253,12 +223,11 @@ export function transSection(p: Project, r: Results, k: number): Drawing {
   const zb = f.cotaTerreno - f.Df, zt = zb + f.h, zg = f.cotaTerreno;
   common(P, f, k, -B / 2, B / 2, zb, zt, zg, 'y');
   const d = colDims(c);
-  const hp = c.ped.activo ? c.ped.h : 0;
-  if (hp > 0) P.push({ t: 'poly', pts: [[yc - c.ped.by / 2, zt], [yc + c.ped.by / 2, zt], [yc + c.ped.by / 2, zt + hp], [yc - c.ped.by / 2, zt + hp]], closed: true, layer: 'columnas', w: 0.5 });
-  const top = Math.max(zg, zt + hp) + 600;
-  P.push({ t: 'poly', pts: [[yc - d.by / 2, zt + hp], [yc - d.by / 2, top], [yc + d.by / 2, top], [yc + d.by / 2, zt + hp]], layer: 'columnas', w: 0.5 });
-  P.push({ t: 'line', x1: yc, y1: zb - 15 * k, x2: yc, y2: top + 8 * k, layer: 'ejes', dash: 'axis', w: 0.18 });
-  P.push({ t: 'text', x: yc, y: top + 9 * k, s: c.nombre, h: 2.5, layer: 'textos', anchor: 'middle', bold: true });
+  apoyoElev(P, p, r, c, yc, d.by, c.ped.by, k, modo === 'armadura');
+  P.push({ t: 'dim', x1: -B / 2, y1: zb, x2: B / 2, y2: zb, off: -18 * k, layer: 'cotas' });
+  P.push({ t: 'dim', x1: -B / 2, y1: zb, x2: yc - d.by / 2, y2: zb, off: -24 * k, layer: 'cotas' });
+  P.push({ t: 'dim', x1: yc + d.by / 2, y1: zb, x2: B / 2, y2: zb, off: -24 * k, layer: 'cotas' });
+  if (modo === 'encofrado') return { id: 'cBe', title: `Corte B-B (encofrado, por ${c.nombre})`, prims: P, bbox: bboxOf(P, k) };
   const L = r.long, T = r.trans, rl = f.recLat;
   const extOut = p.crit.capaInferiorExterna === 'long';
   const zTI = zb + f.recInf + (extOut ? (L.inf.total?.db ?? 0) : 0) + (T.inf.sel?.db ?? 0) / 2;
@@ -280,26 +249,11 @@ export function transSection(p: Project, r: Results, k: number): Drawing {
     for (let i = 0; i < F.total.n; i++) P.push({ t: 'circle', x: -a / 2 + (F.total.n > 1 ? (i * a) / (F.total.n - 1) : a / 2), y: z, r: Math.max(F.total.db / 2, 0.6 * k), layer: face === 'inf' ? 'armInf' : 'armSup', fill: '#0f1d2b' });
   };
   dots('inf'); dots('sup');
-  const m = r.schedule.marcas.find((q) => q.grupo === 'espera' && q.col === c.id);
-  if (m) {
-    const zbar = zb + f.recInf + (L.inf.total?.db ?? 16) + (T.inf.sel?.db ?? 12) + m.db / 2;
-    const cov = c.rec + c.dbEstribo + m.db / 2;
-    for (const sx of [-1, 1]) {
-      const yb = yc + sx * (d.by / 2 - cov);
-      const pts: [number, number][] = [[yb, zbar + m.A], [yb, zbar]];
-      if (m.B) pts.push([yb + sx * m.B, zbar]);
-      P.push({ t: 'poly', pts, layer: 'esperas', w: 0.4 });
-    }
-    P.push({ t: 'text', x: yc + d.by / 2 + 2 * k, y: zt + hp + 0.6 * m.A, s: `(${m.marca}) ${m.n}Ø${m.db}`, h: 2, layer: 'esperas', box: true });
-  }
-  P.push({ t: 'dim', x1: -B / 2, y1: zb, x2: B / 2, y2: zb, off: -18 * k, layer: 'cotas' });
-  P.push({ t: 'dim', x1: -B / 2, y1: zb, x2: yc - d.by / 2, y2: zb, off: -24 * k, layer: 'cotas' });
-  P.push({ t: 'dim', x1: yc + d.by / 2, y1: zb, x2: B / 2, y2: zb, off: -24 * k, layer: 'cotas' });
   return { id: 'cB', title: `Corte B-B (transversal por ${c.nombre})`, prims: P, bbox: bboxOf(P, k) };
 }
 
 function common(P: Prim[], f: Project['footing'], k: number, a: number, b: number, zb: number, zt: number, zg: number, _ax: 'x' | 'y') {
-  const ext = 25 * k;
+  const ext = 12 * k;
   // terreno, limpieza y zapata
   P.push({ t: 'line', x1: a - ext, y1: zg, x2: b + ext, y2: zg, layer: 'terreno', w: 0.35 });
   for (let x = a - ext; x < b + ext; x += 4 * k) P.push({ t: 'line', x1: x, y1: zg, x2: x - 2 * k, y2: zg - 2 * k, layer: 'terreno', w: 0.13 });
@@ -312,8 +266,97 @@ function common(P: Prim[], f: Project['footing'], k: number, a: number, b: numbe
   };
   lvl(zg, 'N.T.N.'); lvl(zt, 'N.S.Z.'); lvl(zb, 'N.Fund.');
   P.push({ t: 'dim', x1: a, y1: zb, x2: a, y2: zt, off: -8 * k, layer: 'cotas' });
-  P.push({ t: 'dim', x1: a, y1: zb, x2: a, y2: zg, off: -16 * k, layer: 'cotas', s: `Df ${mm(zg - zb)}` });
+  P.push({ t: 'dim', x1: a, y1: zb, x2: a, y2: zg, off: -14 * k, layer: 'cotas', s: `Df ${mm(zg - zb)}` });
   P.push({ t: 'text', x: a + 2 * k, y: zb + 1.2 * k, s: `rec. ${f.recInf}`, h: 2, layer: 'cotas' });
   P.push({ t: 'text', x: a + 2 * k, y: zt - 3 * k, s: `rec. ${f.recSup}`, h: 2, layer: 'cotas' });
   P.push({ t: 'text', x: b - 2 * k, y: zb - f.limpieza - 4 * k, s: `H° limpieza e = ${f.limpieza} mm`, h: 2, layer: 'terreno', anchor: 'end' });
+}
+
+/** Elevación del apoyo en un corte: pedestal, elemento apoyado (H°A°, metálico o equipo), esperas y armadura del pedestal */
+function apoyoElev(P: Prim[], p: Project, r: Results, c: Project['columns'][number], u: number, dCol: number, dPed: number, k: number, arm: boolean) {
+  const f = p.footing;
+  const zb = f.cotaTerreno - f.Df, zt = zb + f.h, zg = f.cotaTerreno;
+  const hp = c.ped.activo ? c.ped.h : 0;
+  const zTop = zt + hp;
+  if (hp > 0) {
+    P.push({ t: 'poly', pts: [[u - dPed / 2, zt], [u + dPed / 2, zt], [u + dPed / 2, zTop], [u - dPed / 2, zTop]], closed: true, layer: 'columnas', w: 0.5, fill: '#f8fafc' });
+    P.push({ t: 'dim', x1: u + dPed / 2, y1: zt, x2: u + dPed / 2, y2: zTop, off: 5 * k, layer: 'cotas' });
+    P.push({ t: 'dim', x1: u - dPed / 2, y1: zTop, x2: u + dPed / 2, y2: zTop, off: 4 * k, layer: 'cotas' });
+  }
+  const top = Math.max(zg + 150, zTop + 350);
+  if (c.apoyo === 'equipo') {
+    P.push({ t: 'poly', pts: [[u - dCol / 2, zTop], [u + dCol / 2, zTop], [u + dCol / 2, zTop + 450], [u - dCol / 2, zTop + 450]], closed: true, layer: 'columnas', w: 0.35, dash: 'hidden' });
+    P.push({ t: 'text', x: u, y: zTop + 180, s: 'EQUIPO', h: 2, layer: 'textos', anchor: 'middle' });
+  } else if (c.apoyo === 'metalica') {
+    const tp = 25, bw = 0.6 * dCol;
+    P.push({ t: 'poly', pts: [[u - dCol / 2, zTop], [u + dCol / 2, zTop], [u + dCol / 2, zTop + tp], [u - dCol / 2, zTop + tp]], closed: true, layer: 'columnas', w: 0.35, fill: '#475569' });
+    P.push({ t: 'poly', pts: [[u - bw / 2, zTop + tp], [u - bw / 2, top], [u + bw / 2, top], [u + bw / 2, zTop + tp]], layer: 'columnas', w: 0.5 });
+    P.push({ t: 'line', x1: u - bw / 2 + 15, y1: zTop + tp, x2: u - bw / 2 + 15, y2: top, layer: 'columnas', w: 0.25 });
+    P.push({ t: 'line', x1: u + bw / 2 - 15, y1: zTop + tp, x2: u + bw / 2 - 15, y2: top, layer: 'columnas', w: 0.25 });
+    if (arm) for (const sx of [-1, 1]) {
+      const ub = u + sx * (dCol / 2 - 50);
+      P.push({ t: 'line', x1: ub, y1: zTop + tp + 60, x2: ub, y2: Math.max(zb + f.recInf + 100, zTop - 400), layer: 'esperas', w: 0.35, dash: 'hidden' });
+    }
+    if (arm) P.push({ t: 'text', x: u + dCol / 2 + 2 * k, y: zTop + tp + 2 * k, s: 'PERNOS S/ FABRICANTE', h: 2, layer: 'esperas' });
+  } else {
+    P.push({ t: 'poly', pts: [[u - dCol / 2, zTop], [u - dCol / 2, top], [u + dCol / 2, top], [u + dCol / 2, zTop]], layer: 'columnas', w: 0.5 });
+  }
+  P.push({ t: 'poly', pts: [[u - dCol / 2 - 3 * k, top], [u - 2 * k, top], [u, top + 4 * k], [u + 1 * k, top - 4 * k], [u + 3 * k, top], [u + dCol / 2 + 3 * k, top]], layer: 'columnas', w: 0.25 });
+  P.push({ t: 'line', x1: u, y1: zb - 15 * k, x2: u, y2: top + 8 * k, layer: 'ejes', dash: 'axis', w: 0.18 });
+  P.push({ t: 'text', x: u, y: top + 9 * k, s: c.nombre, h: 2.5, layer: 'textos', anchor: 'middle', bold: true });
+  if (!arm) return;
+  const meshDb = (r.long.inf.total?.db ?? 16) + (r.trans.inf.sel?.db ?? 12);
+  // esperas de columna de H°A°
+  const m = r.schedule.marcas.find((q) => q.grupo === 'espera' && q.col === c.id);
+  if (m) {
+    const zbar = zb + f.recInf + meshDb + m.db / 2;
+    const cov = c.rec + c.dbEstribo + m.db / 2;
+    for (const sx of [-1, 1]) {
+      const ub = u + sx * (dCol / 2 - cov);
+      const pts: [number, number][] = [[ub, zbar + m.A], [ub, zbar]];
+      if (m.B) pts.push([ub + sx * m.B, zbar]);
+      P.push({ t: 'poly', pts, layer: 'esperas', w: 0.4 });
+    }
+    P.push({ t: 'text', x: u + dCol / 2 + 2 * k, y: zTop + 0.5 * (m.A - hp - f.h), s: `(${m.marca}) ${m.n}Ø${m.db} L=${mm(m.lu)}`, h: 2, layer: 'esperas', box: true });
+  }
+  // armadura del pedestal
+  const pr = r.peds?.find((q) => q.colId === c.id);
+  const mp = r.schedule.marcas.find((q) => q.grupo === 'ped' && q.col === c.id);
+  const me = r.schedule.marcas.find((q) => q.grupo === 'estribo' && q.col === c.id);
+  if (pr && mp) {
+    const a = pr.des.arm, cov = c.ped.rec + a.dbE + a.db / 2;
+    const zbar = zb + f.recInf + meshDb + a.db / 2;
+    for (const sx of [-1, 1]) {
+      const ub = u + sx * (dPed / 2 - cov);
+      P.push({ t: 'poly', pts: [[ub, zTop - c.ped.rec], [ub, zbar], [ub + sx * mp.B, zbar]], layer: 'esperas', w: 0.5 });
+    }
+    const zs = [zt - 80, zt - Math.min(250, f.h / 2)];
+    for (let z = zt + 50; z <= zTop - 40; z += a.sE) zs.push(z);
+    for (const z of zs) P.push({ t: 'line', x1: u - dPed / 2 + c.ped.rec, y1: z, x2: u + dPed / 2 - c.ped.rec, y2: z, layer: 'esperas', w: 0.25 });
+    P.push({ t: 'text', x: u - dPed / 2 - 2 * k, y: zt + hp * 0.65, s: `(${mp.marca}) ${mp.n}Ø${mp.db}`, h: 2, layer: 'esperas', anchor: 'end', box: true });
+    if (me) P.push({ t: 'text', x: u - dPed / 2 - 2 * k, y: zt + hp * 0.3, s: `(${me.marca}) E Ø${me.db} c/${a.sE}`, h: 2, layer: 'esperas', anchor: 'end', box: true });
+  }
+}
+
+/** Detalle de armadura del pedestal: sección horizontal con barras y estribo */
+export function pedestalDetail(p: Project, r: Results, colId: string, k = 10): Drawing | null {
+  const c = p.columns.find((q) => q.id === colId);
+  const pr = r.peds?.find((q) => q.colId === colId);
+  if (!c || !pr) return null;
+  const P: Prim[] = [];
+  const { bx, by, rec } = c.ped;
+  const a = pr.des.arm;
+  P.push({ t: 'poly', pts: [[-bx / 2, -by / 2], [bx / 2, -by / 2], [bx / 2, by / 2], [-bx / 2, by / 2]], closed: true, layer: 'contorno', w: 0.5, fill: '#f1f5f9' });
+  const e = rec + a.dbE / 2;
+  P.push({ t: 'poly', pts: [[-bx / 2 + e, -by / 2 + e], [bx / 2 - e, -by / 2 + e], [bx / 2 - e, by / 2 - e], [-bx / 2 + e, by / 2 - e]], closed: true, layer: 'esperas', w: Math.max(0.25, a.dbE / 10 / 2) });
+  for (const b of pr.des.sec.bars) P.push({ t: 'circle', x: b.x, y: b.y, r: a.db / 2, layer: 'esperas', fill: '#0f1d2b' });
+  if (c.apoyo === 'hormigon') {
+    const d = colDims(c);
+    P.push({ t: 'poly', pts: [[-d.bx / 2, -d.by / 2], [d.bx / 2, -d.by / 2], [d.bx / 2, d.by / 2], [-d.bx / 2, d.by / 2]], closed: true, layer: 'columnas', w: 0.25, dash: 'hidden' });
+  }
+  P.push({ t: 'dim', x1: -bx / 2, y1: -by / 2, x2: bx / 2, y2: -by / 2, off: -6 * k, layer: 'cotas', s: `${bx}` });
+  P.push({ t: 'dim', x1: bx / 2, y1: -by / 2, x2: bx / 2, y2: by / 2, off: 6 * k, layer: 'cotas', s: `${by}` });
+  const nb = 2 * a.nx + 2 * a.ny - 4;
+  P.push({ t: 'text', x: -bx / 2, y: by / 2 + 3 * k, s: `${c.nombre}: ${nb}Ø${a.db} + E Ø${a.dbE} c/${a.sE} · h = ${c.ped.h} mm · rec. ${rec}`, h: 2, layer: 'textos' });
+  return { id: `ped-${colId}`, title: `Armadura pedestal ${c.nombre}`, prims: P, bbox: bboxOf(P, k) };
 }

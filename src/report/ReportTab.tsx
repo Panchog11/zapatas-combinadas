@@ -13,7 +13,7 @@ import { Diagram, PressureMap, tramoEq } from '../ui/ResultTabs';
 import { SignConvention } from '../ui/SignConvention';
 import { BendingSchedule } from '../drawings/Schedule';
 import { SvgDrawing, printHTML } from '../drawings/render';
-import { LAYERS, longSection, planDrawing, transSection } from '../drawings/model';
+import { LAYERS, longSection, pedestalDetail, planDrawing, transSection } from '../drawings/model';
 import { axoDrawing } from '../drawings/sheet';
 
 const kN = (v: number, d = 2) => fmt(v / 1e3, d);
@@ -66,7 +66,7 @@ export function ReportTab({ p, r }: TabProps) {
   const geo = r.checks.filter((c) => c.grupo === 'geo');
   const allLayers = new Set(LAYERS.map((l) => l.id));
   const axo = axoDrawing(p, r);
-  const ds = [planDrawing(p, r, 50, 'encofrado'), planDrawing(p, r, 50), longSection(p, r, 50), transSection(p, r, 50)];
+  const ds = [planDrawing(p, r, 50, 'encofrado'), planDrawing(p, r, 50), longSection(p, r, 50), transSection(p, r, 50), ...r.peds.map((q) => pedestalDetail(p, r, q.colId, 50)).filter((d): d is NonNullable<typeof d> => !!d)];
   const govU = r.ult.find((u) => u.tot.combo.nombre === r.env.Mneg.combo) ?? r.ult[0];
   const govS = r.service.length ? r.service.reduce((a, b) => (b.pf.qmax > a.pf.qmax ? b : a)) : null;
   const print = () => { if (ref.current) printHTML(`<div class="memoria">${ref.current.innerHTML}</div>`, 'A4 portrait'); };
@@ -263,8 +263,22 @@ export function ReportTab({ p, r }: TabProps) {
           {mt.diametros.map((d) => <tr key={d}><td>{d}</td><td>{fmt(ld(d, mt.hormigon.fc, mt.acero.fy, n), 0)}</td><td>{fmt(ld(d, mt.hormigon.fc, mt.acero.fy, n, true), 0)}</td><td>{fmt(ldh(d, mt.hormigon.fc, mt.acero.fy, n), 0)}</td><td>{fmt(ldc(d, mt.hormigon.fc, mt.acero.fy, n), 0)}</td><td>{fmt(n.empalmeClaseB * ld(d, mt.hormigon.fc, mt.acero.fy, n), 0)}</td></tr>)}
         </tbody></table>
         <Eq>ld = (c·fy·ψt·ψe·λ/√f'c)·db ≥ {n.ld.minimo} mm, c = {fmt(n.ld.coefMenor, 3)} (db ≤ {n.ld.dbLimite}) ó {fmt(n.ld.coefMayor, 3)} ; ldh = {n.ldh.coef}·ψe·λ·fy/√f'c·db ≥ máx(8db; 150 mm) ; ldc = máx({n.ldc.coef}·fy/(λ√f'c)·db; {n.ldc.coef2}·fy·db; 200 mm)</Eq>
-        {r.checks.filter((c) => c.id.startsWith('est-anc') || c.id.startsWith('est-esp') || c.id.startsWith('est-ped')).map((c) => <CheckBlock key={c.id} c={c} />)}
+        {r.checks.filter((c) => c.id.startsWith('est-anc') || c.id.startsWith('est-esp')).map((c) => <CheckBlock key={c.id} c={c} />)}
 
+        {r.peds.length > 0 && <>
+          <h3>Pedestales / columnas cortas</h3>
+          <p>Las cargas N, Vx, Vy, Mx, My, Mz se aplican en el tope del pedestal (más z carga) con independencia del elemento apoyado. En la base: Mx,b = Mx − (h_ped + z)·Vy ; My,b = My + (h_ped + z)·Vx ; Pu = N + {fmt(n.ped.gammaPP, 1)}·W_ped.</p>
+          {r.peds.map((pr) => (
+            <div key={pr.colId} className="avoid">
+              <h3>{pr.col} — {pr.bx}×{pr.by} mm, h = {pr.hp} mm ({p.columns.find((c) => c.id === pr.colId)?.apoyo === 'hormigon' ? 'columna de H°A°' : p.columns.find((c) => c.id === pr.colId)?.apoyo === 'metalica' ? 'columna metálica' : 'equipo'})</h3>
+              <table><thead><tr><th>Combinación</th><th>Pu [kN]</th><th>Vx [kN]</th><th>Vy [kN]</th><th>Mux,b [kNm]</th><th>Muy,b [kNm]</th><th>Tu [kNm]</th></tr></thead><tbody>
+                {pr.dem.map((d) => <tr key={d.combo}><td>{d.combo}</td><td>{kN(d.Pu)}</td><td>{kN(d.Vx)}</td><td>{kN(d.Vy)}</td><td>{kNm(d.Mx)}</td><td>{kNm(d.My)}</td><td>{kNm(d.Tu)}</td></tr>)}
+              </tbody></table>
+              {r.checks.filter((c) => c.id.startsWith('est-ped-') && c.id.endsWith('-' + pr.colId)).map((c) => <CheckBlock key={c.id} c={c} />)}
+            </div>
+          ))}
+        </>}
+        {r.checks.filter((c) => c.id.startsWith('est-pernos')).map((c) => <CheckBlock key={c.id} c={c} />)}
         <H n={28} t="Armaduras adoptadas" pb />
         <table><thead><tr><th>Marca</th><th>Elemento</th><th>Armadura</th><th>Ubicación</th></tr></thead><tbody>
           {r.schedule.marcas.map((x) => <tr key={x.marca}><td>{x.marca}</td><td>{x.elemento}</td><td>{x.n} Ø{x.db} L = {m(x.lu, 2)} m</td><td>{x.ubic}</td></tr>)}

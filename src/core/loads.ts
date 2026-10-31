@@ -5,7 +5,9 @@ import type { Column, Combo, Project } from './types';
 export const localXY = (p: Project, c: Column) => ({ x: c.x - p.footing.x0, y: c.y - p.footing.y0 });
 
 /** Brazo vertical desde el plano de contacto (base) hasta el punto de aplicación de cargas */
-export const armZ = (p: Project, c: Column) => p.footing.h + c.zCarga;
+/** Altura del punto de aplicación de cargas sobre la cara superior de la zapata (tope del pedestal + adicional) */
+export const zSobreZapata = (c: Column) => (c.ped.activo ? c.ped.h : 0) + c.zCarga;
+export const armZ = (p: Project, c: Column) => p.footing.h + zSobreZapata(c);
 
 export interface Transfer {
   col: string;
@@ -134,8 +136,8 @@ export function resultantGlobal(p: Project, combo: Combo): { N: number; X: numbe
     if (!l) continue;
     N += l.N;
     // momento de columna desplaza la resultante: x = Σ(N·x + My)/N , y = Σ(N·y − Mx)/N (mismo criterio de signos)
-    SX += l.N * c.x + l.My + l.Vx * (p.footing.h + c.zCarga);
-    SY += l.N * c.y - l.Mx + l.Vy * (p.footing.h + c.zCarga);
+    SX += l.N * c.x + l.My + l.Vx * armZ(p, c);
+    SY += l.N * c.y - l.Mx + l.Vy * armZ(p, c);
   }
   return { N, X: N ? SX / N : NaN, Y: N ? SY / N : NaN };
 }

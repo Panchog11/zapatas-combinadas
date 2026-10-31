@@ -1,5 +1,5 @@
 import { colDims, shapeOf, widthAt, inside, type Shape } from './geometry';
-import { comboTotals, weights, localXY, type ComboTotals, type Weights } from './loads';
+import { comboTotals, weights, localXY, armZ, zSobreZapata, type ComboTotals, type Weights } from './loads';
 import { solvePressure, qAt, type PressureField } from './pressure';
 import { beamAnalysis, interp, type BeamResult, type PointLoad } from './beam';
 import {
@@ -10,6 +10,7 @@ import type { Check, Column, Combo, Estado, Issue, Project } from './types';
 import { fmt } from './units';
 import { buildSchedule, type Schedule } from './rebar';
 import { validate } from './validate';
+import { designPed, type PedDemand, type PedDesign } from './pedestal';
 
 const k = (v: number, d = 2) => fmt(v / 1e3, d); // N → kN
 const km = (v: number, d = 2) => fmt(v / 1e6, d); // N·mm → kN·m
@@ -64,6 +65,7 @@ export interface Results {
   trans: { inf: TransFace; sup: TransFace };
   punz: PunchRes[];
   punzConjunto: PunchRes | null;
+  peds: PedRes[];
   checks: Check[];
   schedule: Schedule;
   issues: Issue[];
@@ -202,7 +204,7 @@ export function analyze(p: Project, opts: { schedule?: boolean; geoOnly?: boolea
             const l = cb.cargas[c.id];
             if (!l) continue;
             const { x, y } = localXY(p, c);
-            const z = f.h + c.zCarga;
+            const z = armZ(p, c);
             if (eje === 'x') {
               const arm = lado === 'der' ? s.L - x : x;
               const mv = (l.My + z * l.Vx) * (lado === 'der' ? 1 : -1);
@@ -270,7 +272,7 @@ export function analyze(p: Project, opts: { schedule?: boolean; geoOnly?: boolea
     p.columns.map((c) => {
       const l = cb.cargas[c.id] ?? { N: 0, Vx: 0, Vy: 0, Mx: 0, My: 0, Mz: 0 };
       const { x } = localXY(p, c);
-      return { id: c.id, x, P: l.N, C: l.My + (f.h + c.zCarga) * l.Vx, ancho: faceRect(p, c).bx };
+      return { id: c.id, x, P: l.N, C: l.My + armZ(p, c) * l.Vx, ancho: faceRect(p, c).bx };
     });
   const ult: UltRes[] = activeCombos(p, 'ultima').map((cb) => {
     const tot = comboTotals(p, s, cb, null);
@@ -529,8 +531,8 @@ export function analyze(p: Project, opts: { schedule?: boolean; geoOnly?: boolea
       const qu = qAt(u.pf, xm, ym);
       const Vu = Math.max(0, l.N - qu * cp.area);
       const ex = xc - cp.xg, ey = (fr.y1 + fr.y2) / 2 - cp.yg;
-      const Mux = l.Mx - c.zCarga * l.Vy - Vu * ey;
-      const Muy = l.My + c.zCarga * l.Vx + Vu * ex;
+      const Mux = l.Mx - zSobreZapata(c) * l.Vy - Vu * ey;
+      const Muy = l.My + zSobreZapata(c) * l.Vx + Vu * ex;
       const chk = punchingCheck({ Vu, Mux, Muy, cp, d: dPunz, beta, fc }, n);
       const r = { col: c.nombre, combo: u.tot.combo.nombre, cp, Pu: l.N, qu, Vu, Mux, Muy, d: dPunz, chk, beta };
       if (!gov || chk.ratio > gov.chk.ratio) gov = r;
@@ -569,7 +571,8 @@ export function analyze(p: Project, opts: { schedule?: boolean; geoOnly?: boolea
     if (punzConjunto) mk(ctx, { id: `est-punz-conj-${i}-${j}`, grupo: 'est', titulo: `Punzonamiento conjunto ${punzConjunto.col}`, formula: 'vu = Vu/(b0·d) ≤ φvc', variables: `b0 = ${fmt(punzConjunto.cp.b0, 0)} mm`, sustitucion: `vu = ${fmt(punzConjunto.chk.vu, 3)} ≤ ${fmt(punzConjunto.chk.phivc, 3)} MPa`, demanda: punzConjunto.chk.vu, capacidad: punzConjunto.chk.phivc, unidad: 'MPa', combo: punzConjunto.combo, ref: n.referencias.punz, nota: 'Transferencia de momento no considerada en el perímetro conjunto.' });
   }
 
-  // Aplastamiento, esperas y anclajes
+  // Aplastamiento, esperas, pedestales y anclajes
+  const peds: PedRes[] = [];
   for (const c of p.columns) {
     const fr = faceRect(p, c);
     const cd = c.ped.activo ? { bx: c.ped.bx, by: c.ped.by, area: c.ped.bx * c.ped.by } : colDims(c);
@@ -582,25 +585,26 @@ export function analyze(p: Project, opts: { schedule?: boolean; geoOnly?: boolea
     const Pu = Math.max(0, ...ult.map((u) => u.tot.combo.cargas[c.id]?.N ?? 0));
     const govU = ult.find((u) => (u.tot.combo.cargas[c.id]?.N ?? 0) === Pu);
     if (ult.length) mk(ctx, { id: `est-aplast-${c.id}`, grupo: 'est', titulo: `Aplastamiento bajo ${c.nombre}${c.ped.activo ? ' (pedestal)' : ''}`, formula: 'φBn = φ·0,85·f\'c·A1·√(A2/A1) ≥ Pu ; √(A2/A1) ≤ 2', variables: `A1 = ${fmt(A1 / 1e6, 4)} m²; A2 = ${fmt(A2 / 1e6, 3)} m²`, sustitucion: `φBn = ${n.phiAplastamiento}·0,85·${fc}·${fmt(A1, 0)}·${fmt(raiz, 2)} = ${k(phiBn)} kN ≥ ${k(Pu)} kN`, demanda: Pu, capacidad: phiBn, unidad: 'N', combo: govU?.tot.combo.nombre ?? '—', ref: n.referencias.aplast, nota: 'Si no verifica, el exceso debe transferirse por las esperas (no calculado automáticamente).' });
-    // Esperas
-    const Ag = colDims(c).area;
-    const AsEsp = c.nBarras * barArea(c.dbBarras);
-    mk(ctx, { id: `est-esp-cuantia-${c.id}`, grupo: 'est', titulo: `Cuantía de esperas ${c.nombre}`, formula: 'As,esperas ≥ 0,005·Ag', variables: `Ag = ${fmt(Ag / 1e6, 4)} m²`, sustitucion: `${c.nBarras}Ø${c.dbBarras} = ${fmt(AsEsp, 0)} ≥ ${fmt(n.esperasCuantiaMin * Ag, 0)} mm²`, demanda: n.esperasCuantiaMin * Ag, capacidad: AsEsp, unidad: 'mm²', combo: '—', ref: n.referencias.esperas });
     const disp = f.h - f.recInf - (long.inf.total?.db ?? 16) - (trans.inf.sel?.db ?? 12);
-    const ldcv = ldc(c.dbBarras, fc, fy, n);
-    mk(ctx, { id: `est-esp-anc-${c.id}`, grupo: 'est', titulo: `Anclaje de esperas en compresión ${c.nombre}`, formula: 'ldc = máx(0,24·fy/(λ√f\'c)·db; 0,043·fy·db; 200 mm) ≤ disponible', variables: 'disponible = h − rec. inf. − Ø malla inferior (esperas apoyadas sobre la malla)', sustitucion: `ldc = ${fmt(ldcv, 0)} mm ≤ ${fmt(disp, 0)} mm`, demanda: ldcv, capacidad: disp, unidad: 'mm', combo: '—', ref: n.referencias.ldc });
-    const Nmin = Math.min(0, ...ult.map((u) => u.tot.combo.cargas[c.id]?.N ?? 0));
-    if (Nmin < 0) {
-      const ldhv = ldh(c.dbBarras, fc, fy, n);
-      const Treq = -Nmin / (n.phiFlexion * fy);
-      mk(ctx, { id: `est-esp-trac-${c.id}`, grupo: 'est', titulo: `Arrancamiento de esperas ${c.nombre}`, formula: 'As ≥ Tu/(φ·fy) ; ldh ≤ disponible', variables: '', sustitucion: `As,req = ${fmt(Treq, 0)} ≤ ${fmt(AsEsp, 0)} mm²; ldh = ${fmt(ldhv, 0)} ≤ ${fmt(disp, 0)} mm`, demanda: Math.max(Treq / AsEsp, ldhv / disp), capacidad: 1, unidad: '', combo: '—', ref: n.referencias.ldh });
+    if (c.apoyo === 'hormigon') {
+      // Esperas
+      const Ag = colDims(c).area;
+      const AsEsp = c.nBarras * barArea(c.dbBarras);
+      mk(ctx, { id: `est-esp-cuantia-${c.id}`, grupo: 'est', titulo: `Cuantía de esperas ${c.nombre}`, formula: 'As,esperas ≥ 0,005·Ag', variables: `Ag = ${fmt(Ag / 1e6, 4)} m²`, sustitucion: `${c.nBarras}Ø${c.dbBarras} = ${fmt(AsEsp, 0)} ≥ ${fmt(n.esperasCuantiaMin * Ag, 0)} mm²`, demanda: n.esperasCuantiaMin * Ag, capacidad: AsEsp, unidad: 'mm²', combo: '—', ref: n.referencias.esperas });
+      const ldcv = ldc(c.dbBarras, fc, fy, n);
+      mk(ctx, { id: `est-esp-anc-${c.id}`, grupo: 'est', titulo: `Anclaje de esperas en compresión ${c.nombre}`, formula: 'ldc = máx(0,24·fy/(λ√f\'c)·db; 0,043·fy·db; 200 mm) ≤ disponible', variables: 'disponible = h − rec. inf. − Ø malla inferior (esperas apoyadas sobre la malla)', sustitucion: `ldc = ${fmt(ldcv, 0)} mm ≤ ${fmt(disp, 0)} mm`, demanda: ldcv, capacidad: disp, unidad: 'mm', combo: '—', ref: n.referencias.ldc });
+      const Nmin = Math.min(0, ...ult.map((u) => u.tot.combo.cargas[c.id]?.N ?? 0));
+      if (Nmin < 0) {
+        const ldhv = ldh(c.dbBarras, fc, fy, n);
+        const Treq = -Nmin / (n.phiFlexion * fy);
+        mk(ctx, { id: `est-esp-trac-${c.id}`, grupo: 'est', titulo: `Arrancamiento de esperas ${c.nombre}`, formula: 'As ≥ Tu/(φ·fy) ; ldh ≤ disponible', variables: '', sustitucion: `As,req = ${fmt(Treq, 0)} ≤ ${fmt(AsEsp, 0)} mm²; ldh = ${fmt(ldhv, 0)} ≤ ${fmt(disp, 0)} mm`, demanda: Math.max(Treq / AsEsp, ldhv / disp), capacidad: 1, unidad: '', combo: '—', ref: n.referencias.ldh });
+      } else {
+        mk(ctx, { id: `est-esp-trac-${c.id}`, grupo: 'est', titulo: `Arrancamiento de esperas ${c.nombre}`, formula: '—', variables: '', sustitucion: 'Sin tracción axial en combinaciones últimas. Tracción por flexión de columna: verificar con el diseño de la columna.', demanda: 0, capacidad: 1, unidad: '', combo: '—', ref: n.referencias.ldh, estado: Math.max(...ult.map((u) => Math.hypot(u.tot.combo.cargas[c.id]?.Mx ?? 0, u.tot.combo.cargas[c.id]?.My ?? 0))) > 0 ? 'warn' : 'ok' });
+      }
     } else {
-      mk(ctx, { id: `est-esp-trac-${c.id}`, grupo: 'est', titulo: `Arrancamiento de esperas ${c.nombre}`, formula: '—', variables: '', sustitucion: 'Sin tracción axial en combinaciones últimas. Tracción por flexión de columna: verificar con el diseño de la columna.', demanda: 0, capacidad: 1, unidad: '', combo: '—', ref: n.referencias.ldh, estado: Math.max(...ult.map((u) => Math.hypot(u.tot.combo.cargas[c.id]?.Mx ?? 0, u.tot.combo.cargas[c.id]?.My ?? 0))) > 0 ? 'warn' : 'ok' });
+      mk(ctx, { id: `est-pernos-${c.id}`, grupo: 'est', titulo: `Anclaje de ${c.apoyo === 'metalica' ? 'columna metálica' : 'equipo'} ${c.nombre}`, formula: '—', variables: '', sustitucion: 'Pernos de anclaje y placa base: no calculados. Verificar con el fabricante o el diseño de la estructura metálica (incluye corte y tracción de pernos).', demanda: NaN, capacidad: NaN, unidad: '', combo: '—', ref: n.referencias.zapatas, estado: 'warn' });
     }
-    if (c.ped.activo) {
-      const Ap = c.ped.bx * c.ped.by;
-      mk(ctx, { id: `est-ped-${c.id}`, grupo: 'est', titulo: `Armadura del pedestal ${c.nombre}`, formula: 'As ≥ 0,005·Ag,ped (hipótesis)', variables: 'Diseño como columna corta no implementado', sustitucion: `Se adoptan barras adicionales hasta ${fmt(0.005 * Ap, 0)} mm²`, demanda: 0, capacidad: 1, unidad: '', combo: '—', ref: n.referencias.esperas, estado: 'warn' });
-    }
+    if (c.ped.activo) peds.push(pedestalChecks(ctx, c, ult, disp));
   }
   // Anclaje de armaduras de la zapata
   const anc = (titulo: string, id: string, dbv: number, x: number, sup: boolean, hook: boolean) => {
@@ -627,7 +631,7 @@ export function analyze(p: Project, opts: { schedule?: boolean; geoOnly?: boolea
   // NaN / infinitos
   if ([Mpos.M, Mneg.M, dPunz, s.A].some((v) => !Number.isFinite(v))) issues.push({ nivel: 'error', msg: 'Resultados no numéricos (NaN/∞): revisar datos de entrada.' });
 
-  const schedule = buildSchedule(p, s, { long, trans, dd }, opts.schedule !== false);
+  const schedule = buildSchedule(p, s, { long, trans, dd, peds }, opts.schedule !== false);
   for (const wmsg of schedule.avisos) issues.push({ nivel: 'warn', msg: wmsg });
 
   // Cantidades
@@ -655,9 +659,64 @@ export function analyze(p: Project, opts: { schedule?: boolean; geoOnly?: boolea
   return {
     shape: s, w, service, ult, predim,
     env: { Mpos, Mneg, V: Vgov, xs, pos, neg },
-    d: { ...dd, punz: dPunz, corte: dCorte }, long, trans, punz, punzConjunto,
+    d: { ...dd, punz: dPunz, corte: dCorte }, long, trans, punz, punzConjunto, peds,
     checks: ctx.checks, schedule, issues, estado, cantidades, advertenciasModelo,
   };
 }
 
 export { inside };
+
+export interface PedRes { colId: string; col: string; hp: number; bx: number; by: number; dem: PedDemand[]; des: PedDesign; Wpu: number }
+
+/** Pedestal / columna corta: flexo-compresión biaxial, corte, torsión, esbeltez, aplastamiento y anclaje */
+function pedestalChecks(ctx: Ctx, c: Column, ult: UltRes[], disp: number): PedRes {
+  const { p } = ctx;
+  const n = p.norm, fc = p.mat.hormigon.fc, fy = p.mat.acero.fy, Es = p.mat.acero.Es;
+  const { h: hp, bx, by, rec } = c.ped;
+  const Wpu = n.ped.gammaPP * p.mat.hormigon.gammaC * bx * by * hp;
+  const zc = hp + c.zCarga; // brazo desde el tope de carga hasta la base del pedestal
+  const dem: PedDemand[] = ult.map((u) => {
+    const l = u.tot.combo.cargas[c.id] ?? { N: 0, Vx: 0, Vy: 0, Mx: 0, My: 0, Mz: 0 };
+    return { combo: u.tot.combo.nombre, Pu: l.N + Wpu, Vx: l.Vx, Vy: l.Vy, Mx: l.Mx - zc * l.Vy, My: l.My + zc * l.Vx, Tu: l.Mz };
+  });
+  const des = designPed(bx, by, hp, rec, c.ped.arm, p.mat.diametros, fc, fy, Es, dem, n);
+  const a = des.arm, R = n.referencias, nb = 2 * a.nx + 2 * a.ny - 4;
+  const arm = `${nb}Ø${a.db} (${a.nx} por cara X, ${a.ny} por cara Y) + E Ø${a.dbE} c/${a.sE}`;
+  const g = des.pm.d;
+  mk(ctx, {
+    id: `est-ped-pm-${c.id}`, grupo: 'est', titulo: `Pedestal ${c.nombre}: flexo-compresión biaxial`,
+    formula: 'Compatibilidad de deformaciones (εcu = 0,003, bloque 0,85·f\'c·β1·c), φ variable 0,65–0,90; demanda (Pu, Mux, Muy) dentro del contorno φMn(Pu)',
+    variables: `Sección ${bx}×${by} mm; ${arm}; ρ = ${fmt(des.rho * 100, 2)} %; Pu incluye ${fmt(n.ped.gammaPP, 1)}·peso propio = ${k(Wpu)} kN`,
+    sustitucion: `Pu = ${k(g?.Pu ?? 0)} kN; Mux = ${km(g?.Mx ?? 0)} kNm; Muy = ${km(g?.My ?? 0)} kNm en la base (M + (h_ped + z)·V); |Mu| = ${km(Math.hypot(g?.Mx ?? 0, g?.My ?? 0))} kNm ≤ φMn(Pu) = ${Number.isFinite(des.pm.cap) ? km(des.pm.cap) : '—'} kNm en esa dirección`,
+    demanda: des.pm.ratio, capacidad: 1, unidad: '', combo: g?.combo ?? '—', ref: R.pedFlex,
+  });
+  mk(ctx, { id: `est-ped-rho-${c.id}`, grupo: 'est', titulo: `Pedestal ${c.nombre}: cuantía longitudinal`, formula: 'ρmín ≤ As/Ag ≤ ρmáx', variables: `ρmín = ${n.ped.rhoMin}; ρmáx = ${n.ped.rhoMax}`, sustitucion: `${fmt(n.ped.rhoMin * 100, 2)} % ≤ ${fmt(des.rho * 100, 2)} % ≤ ${fmt(n.ped.rhoMax * 100, 2)} %`, demanda: Math.max(n.ped.rhoMin / des.rho, des.rho / n.ped.rhoMax), capacidad: 1, unidad: '', combo: '—', ref: R.pedCuantia });
+  mk(ctx, { id: `est-ped-sep-${c.id}`, grupo: 'est', titulo: `Pedestal ${c.nombre}: separación de barras`, formula: 's_libre ≥ máx(40 mm; 1,5·db) y separación libre ≤ 300 mm', variables: '', sustitucion: `libre = ${fmt(des.libre, 0)} mm ≥ ${fmt(des.libreMin, 0)} mm`, demanda: des.libreMin / Math.max(1, des.libre), capacidad: 1, unidad: '', combo: '—', ref: R.pedSepar, estado: des.libre >= des.libreMin && des.libre <= 300 ? 'ok' : 'fail' });
+  const cv = des.corte;
+  mk(ctx, {
+    id: `est-ped-v-${c.id}`, grupo: 'est', titulo: `Pedestal ${c.nombre}: corte biaxial`,
+    formula: 'φVn = φ·(Vc + Vs); Vc = (1 + Nu/(14·Ag))·(1/6)·√f\'c·bw·d; Vs = Av·fy·d/s; Vux/φVnx + Vuy/φVny ≤ 1 (interacción lineal)',
+    variables: `Av = 2 ramas Ø${a.dbE}; s = ${a.sE} mm`,
+    sustitucion: `φVnx = ${k(cv.x.phiVn)} kN, φVny = ${k(cv.y.phiVn)} kN; Vux = ${k(Math.abs(cv.d?.Vx ?? 0))} kN, Vuy = ${k(Math.abs(cv.d?.Vy ?? 0))} kN → ${fmt(cv.ratio, 3)}`,
+    demanda: cv.ratio, capacidad: 1, unidad: '', combo: cv.d?.combo ?? '—', ref: R.pedCorte,
+  });
+  mk(ctx, { id: `est-ped-est-${c.id}`, grupo: 'est', titulo: `Pedestal ${c.nombre}: separación de estribos`, formula: 's ≤ mín(16·db; 48·dbE; lado menor; 300 mm)', variables: '', sustitucion: `s = ${a.sE} mm ≤ ${fmt(des.sMaxE, 0)} mm`, demanda: a.sE, capacidad: des.sMaxE, unidad: 'mm', combo: '—', ref: R.pedEstribos });
+  const t = des.torsion;
+  mk(ctx, {
+    id: `est-ped-t-${c.id}`, grupo: 'est', titulo: `Pedestal ${c.nombre}: torsión Mz`,
+    formula: 'Tu ≤ Tth = φ·(1/12)·√f\'c·(Acp²/pcp)·√(1 + Nu/(Ag·√f\'c/3)) → se puede despreciar la torsión', variables: `Acp = ${fmt(bx * by / 1e6, 4)} m²; pcp = ${fmt(2 * (bx + by), 0)} mm`,
+    sustitucion: `Tu = ${km(Math.abs(t.Tu))} kNm ≤ Tth = ${km(t.Tth)} kNm`, demanda: Math.abs(t.Tu), capacidad: t.Tth, unidad: 'N·mm', combo: t.d?.combo ?? '—', ref: R.pedTorsion,
+    nota: t.ok ? undefined : 'Supera el umbral: requiere armadura de torsión (no implementada en esta versión).',
+  });
+  mk(ctx, { id: `est-ped-esb-${c.id}`, grupo: 'est', titulo: `Pedestal ${c.nombre}: esbeltez`, formula: 'k·lu/r ≤ 22 (columna corta)', variables: `k = ${n.ped.kEsbeltez} (voladizo, conservador); lu = ${hp} mm; r = 0,3·${Math.min(bx, by)} mm`, sustitucion: `k·lu/r = ${fmt(des.esbeltez, 1)} ≤ ${n.ped.esbeltezLim}`, demanda: des.esbeltez, capacidad: n.ped.esbeltezLim, unidad: '', combo: '—', ref: R.pedEsbeltez, estado: des.esbeltez <= n.ped.esbeltezLim ? 'ok' : 'warn', nota: des.esbeltez > n.ped.esbeltezLim ? 'Efectos de segundo orden no considerados: reducir la altura o aumentar la sección.' : undefined });
+  // aplastamiento bajo el elemento apoyado (placa, columna o equipo)
+  const A1 = colDims(c).area, A2 = bx * by;
+  const raiz = Math.min(Math.sqrt(A2 / A1), n.aplastamiento.raizMax);
+  const phiBn = n.phiAplastamiento * n.aplastamiento.coef * fc * A1 * raiz;
+  const Pmax = Math.max(0, ...dem.map((d) => d.Pu - Wpu));
+  mk(ctx, { id: `est-ped-apl-${c.id}`, grupo: 'est', titulo: `Pedestal ${c.nombre}: aplastamiento en el tope`, formula: 'φBn = φ·0,85·f\'c·A1·√(A2/A1) ≥ Pu', variables: `A1 = ${c.apoyo === 'hormigon' ? 'columna' : 'placa / apoyo'} ${fmt(A1 / 1e6, 4)} m²; A2 = ${fmt(A2 / 1e6, 4)} m²`, sustitucion: `φBn = ${k(phiBn)} kN ≥ ${k(Pmax)} kN`, demanda: Pmax, capacidad: phiBn, unidad: 'N', combo: '—', ref: R.aplast });
+  // anclaje de las barras del pedestal en la zapata (gancho apoyado sobre la malla inferior)
+  const ldhv = ldh(a.db, fc, fy, n);
+  mk(ctx, { id: `est-ped-anc-${c.id}`, grupo: 'est', titulo: `Pedestal ${c.nombre}: anclaje de barras en la zapata`, formula: 'ldh ≤ h − rec. inf. − Ø malla (tracción por flexión)', variables: '', sustitucion: `ldh = ${fmt(ldhv, 0)} mm ≤ ${fmt(disp, 0)} mm`, demanda: ldhv, capacidad: disp, unidad: 'mm', combo: '—', ref: R.ldh });
+  return { colId: c.id, col: c.nombre, hp, bx, by, dem, des, Wpu };
+}

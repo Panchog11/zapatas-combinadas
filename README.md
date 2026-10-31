@@ -35,6 +35,7 @@ src/core/section.ts     As exacta, φMn, εt, selección de barras, ld / ldh / l
 src/core/punching.ts    Perímetro crítico interior/borde/esquina, Jc, transferencia de momento
 src/core/analysis.ts    Orquestador: verificaciones geotécnicas y estructurales, estado general
 src/core/combos.ts      Casos de carga (D, L, Lr, W, E, S, H…) y generador de combinaciones por plantillas
+src/core/pedestal.ts    Pedestal: diagrama de interacción biaxial, corte, torsión, armado automático
 src/core/rebar.ts       Armado, refuerzos con prolongación, planilla de doblado, totales
 src/core/autosize.ts    Dimensionamiento automático rectangular/trapezoidal
 src/core/validate.ts    Validaciones de datos
@@ -64,11 +65,12 @@ En "Columnas y cargas": defina casos sin mayorar por columna, cargue o edite las
 - Corte unidireccional longitudinal y transversal; punzonamiento interior/borde/esquina con transferencia de momento y perímetros superpuestos.
 - Aplastamiento, cuantía y anclaje de esperas, tracción de esperas, anclaje de armaduras, empalmes en barras > barra comercial.
 - Refuerzos con prolongación máx(d; 12db) y ld desde la sección de momento máximo.
+- Pedestal / columna corta de altura ajustable bajo columna de H°A°, metálica o equipo: flexo-compresión biaxial por compatibilidad de deformaciones (N, Mx, My), corte biaxial, umbral de torsión (Mz), esbeltez, cuantías, separaciones, aplastamiento en el tope y anclaje en la zapata; armado automático o manual.
 
 ## Verificaciones pendientes / limitaciones
 
 - Capacidad portante teórica (c, φ), asentamiento diferencial, modelo de losa sobre resortes (ks) o elementos finitos.
-- Diseño del pedestal como columna corta (se dispone mínimo 0,005·Ag); refuerzo de punzonamiento.
+- Pedestal: sin armadura de torsión ni efectos de segundo orden (se avisa si se superan los umbrales); pernos de anclaje y placa base no calculados; refuerzo de punzonamiento.
 - Torsión Mz; columnas rotadas (se usan bx, by sin rotar); dirección longitudinal fija en X.
 - Plantilla base de factores: forma de CIRSOC 201-2005 §9.2 con f1 = 0,5; verificar contra CIRSOC 101/102/103 y el destino de la obra.
 - Vigas de fundación: solo registro descriptivo.
